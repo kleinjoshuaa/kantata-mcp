@@ -142,70 +142,6 @@ You then run **`kantata`** and **`kantata-mcp`** from that environment.
 
 **Custom credentials file:** set **`KANTATA_CREDENTIALS_PATH`** to an absolute path before login and when running MCP so every component reads the same file.
 
-### OAuth client ID and secret via LastPass CLI (`lpass`)
-
-If you use [LastPass](https://www.lastpass.com/) and the [lastpass-cli](https://github.com/lastpass/lastpass-cli) (`brew install lastpass-cli` on macOS), you can load the Kantata OAuth **client ID** and **client secret** from a vault item at runtime instead of pasting them into the terminal or into `mcp.json`.
-
-1. **Sign in to the CLI** (when your session expires):
-
-   ```bash
-   lpass login
-   ```
-
-2. **Store the pair in LastPass** in a way `lpass` can read:
-
-   - **Secure Note** (recommended): add custom fields named exactly what you will pass to `--field`, e.g. `Client ID` and `Client Secret`.
-   - **Or** a generic “password” site entry: put the client id in **Username** and the client secret in **Password** (then use `--username` / `--password` below instead of `--field`).
-
-   Use the item’s full path as shown in LastPass (folders allowed), e.g. `Shared-Engineering/Kantata OAuth`.
-
-3. **Login from the shell** without pasting secrets (adjust `ITEM` and field names to match your vault):
-
-   ```bash
-   ITEM="Shared-Engineering/Kantata OAuth"
-   export KANTATA_CLIENT_ID="$(lpass show "$ITEM" --field='Client ID' | tr -d '\r\n')"
-   export KANTATA_CLIENT_SECRET="$(lpass show "$ITEM" --field='Client Secret' | tr -d '\r\n')"
-   uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata login
-   ```
-
-   If you used **Username** / **Password** on the item:
-
-   ```bash
-   export KANTATA_CLIENT_ID="$(lpass show "$ITEM" --username | tr -d '\r\n')"
-   export KANTATA_CLIENT_SECRET="$(lpass show "$ITEM" --password | tr -d '\r\n')"
-   ```
-
-   `tr -d '\r\n'` avoids stray newlines some `lpass` versions print.
-
-4. **`mcp.json` without OAuth secrets** — After a successful `kantata login`, **`kantata-mcp` only needs your Kantata access token** from the default credentials file (**`~/.config/kantata/credentials.json`**) unless you override the path with **`KANTATA_CREDENTIALS_PATH`**. It does **not** read `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET`. So your MCP config should **not** include the OAuth client or secret in `env`. You usually **omit the whole `env` block** (see [MCP server](#mcp-server-in-cursor-or-similar)); add **`KANTATA_CREDENTIALS_PATH`** or **`KANTATA_API_BASE`** only when you need a non-default location or API host.
-
-   If you still want a **launcher script** as `command` (for example to avoid repeating `uvx` args or to force a known `PATH`), the script can be minimal — no LastPass calls required for normal MCP operation:
-
-   ```bash
-   # ~/bin/kantata-mcp-uvx.sh  (example — chmod +x)
-   exec uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata-mcp
-   ```
-
-   Cursor (or another client) would use `"command": "/Users/you/bin/kantata-mcp-uvx.sh"` with **no `env`** if the default token file is fine.
-
-5. **Optional: one script for “login with LastPass”** so you never type the `export` lines:
-
-   Save as e.g. `~/bin/kantata-login-lpass.sh`, `chmod +x`, edit `ITEM` / field names once:
-
-   ```bash
-   #!/usr/bin/env sh
-   set -e
-   ITEM="${KANTATA_LPASS_ITEM:-Shared-Engineering/Kantata OAuth}"
-   export KANTATA_CLIENT_ID="$(lpass show "$ITEM" --field='Client ID' | tr -d '\r\n')"
-   export KANTATA_CLIENT_SECRET="$(lpass show "$ITEM" --field='Client Secret' | tr -d '\r\n')"
-   UV_FROM="${KANTATA_UV_FROM:-git+https://github.com/kleinjoshuaa/kantata-mcp.git}"
-   exec uvx --from "$UV_FROM" kantata login "$@"
-   ```
-
-   Then run: `kantata-login-lpass.sh` (or pass `--port 8899` etc. as extra args).
-
-**Operational notes:** `lpass` must be able to read the item (same LastPass account, correct folder name). For automation, your org’s LastPass policy may require device approval or MFA — that is outside this tool. Do not commit scripts that embed item names if they reveal sensitive structure; using **`KANTATA_LPASS_ITEM`** in the environment keeps the script generic.
-
 ### Sign in with a bearer token only
 
 If your organization gave you a token instead of OAuth credentials:
@@ -245,7 +181,7 @@ So if you ran **`kantata login`** with defaults and do not set **`KANTATA_ACCESS
 
 **Using `uvx` (no path to a venv binary):** `uv` must be on your **`PATH`** when the IDE starts the server.
 
-To keep **OAuth client id and secret out of `mcp.json`**, rely on a prior `kantata login` (see [LastPass CLI](#oauth-client-id-and-secret-via-lastpass-cli-lpass) if you load those credentials only at login time). The MCP server uses the saved **access token** file, not the OAuth pair.
+To keep **OAuth client id and secret out of `mcp.json`**, run **`kantata login`** in a terminal first (export `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET` there only for that session). The MCP server uses the saved **access token** file, not the OAuth pair.
 
 **Minimal config** (default token file after `kantata login`):
 
