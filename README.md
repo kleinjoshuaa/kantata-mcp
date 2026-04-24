@@ -57,6 +57,14 @@ Users who will use only a **bearer token** need the token (and rotation procedur
 
 This section is for **you** if you want the CLI and/or MCP server on your computer.
 
+### TL;DR
+
+1. **Pick how you get the tools** — Easiest: **Option A** (`uvx` from git, no clone). Or **Option B** (clone the repo and install into a venv). Both are spelled out below.
+2. **Get Kantata credentials from your admin** — Usually **OAuth client ID + client secret** (for `kantata login`), or sometimes a **bearer access token** only. If you are not sure what to ask for, read **section 1** above.
+3. **Add the MCP server to your client** — In Cursor (or similar), add a `kantata` entry with **`uvx`**, **`--from`**, **`git+https://github.com/kleinjoshuaa/kantata-mcp.git`**, and **`kantata-mcp`** (full example under **MCP server in Cursor** below). You can **omit the whole `env` block** if you will use the default token file after login.
+4. **Sign in once from a terminal** — **OAuth:** set **`KANTATA_CLIENT_ID`** and **`KANTATA_CLIENT_SECRET`**, then run **`kantata login`** (prefix with **`uvx --from …`** if you use Option A). **Bearer only:** set **`KANTATA_ACCESS_TOKEN`** and skip login. (See **Sign in with OAuth** / **Sign in with a bearer token** below.)
+5. **Restart or refresh MCP in the IDE** — So the server reloads your saved token or updated `env`. If auth fails, check that MCP `env` does not set a stale **`KANTATA_ACCESS_TOKEN`** that overrides your credentials file.
+
 ### Prerequisites
 
 - **[uv](https://docs.astral.sh/uv/)** — enough for the recommended **uvx** workflow below (uv can fetch a compatible Python for the tool).
