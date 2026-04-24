@@ -80,13 +80,20 @@ def kantata_list_tasks(
     workspace_id: str,
     parent_story_id: str | None = None,
     search: str | None = None,
+    include_wbs: bool = True,
 ) -> str:
-    """List tasks (stories) for a workspace. Optionally filter by parent story or search text."""
+    """List tasks (stories) for a workspace. Optionally filter by parent story or search text.
+
+    When include_wbs is true (default), each item includes a ``wbs`` field (e.g. ``4.3``) computed from
+    ``parent_id`` and ascending ``position`` so it aligns with the Kantata schedule WBS column when the
+    response lists all stories in the workspace. Set include_wbs false to omit. Notes are in ``meta.wbs``.
+    """
     return _dump(
         _ops().list_tasks(
             workspace_id=workspace_id,
             parent_story_id=parent_story_id,
             search=search,
+            include_wbs=include_wbs,
         )
     )
 

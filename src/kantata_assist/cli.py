@@ -101,13 +101,24 @@ def cmd_list_tasks(
     workspace_id: str,
     parent: Annotated[str | None, typer.Option("--parent")] = None,
     search: Annotated[str | None, typer.Option("--search")] = None,
+    no_wbs: Annotated[
+        bool,
+        typer.Option(
+            "--no-wbs",
+            help="Omit client WBS codes (Kantata API does not return outline numbers).",
+        ),
+    ] = False,
 ) -> None:
-    """List stories (tasks) for a workspace."""
+    """List stories (tasks) for a workspace.
+
+    Each row includes ``wbs`` (e.g. 4.3.1) unless ``--no-wbs`` is set; see ``meta.wbs`` for scope notes.
+    """
     _json(
         operations_from_token().list_tasks(
             workspace_id=workspace_id,
             parent_story_id=parent,
             search=search,
+            include_wbs=not no_wbs,
         )
     )
 

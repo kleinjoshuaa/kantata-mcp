@@ -199,6 +199,11 @@ def test_list_tasks_single_page() -> None:
     ops = operations_with_transport(h)
     r = ops.list_tasks(workspace_id="1")
     assert len(r["items"]) == 1
+    assert r["items"][0]["wbs"] == "1"
+    assert "wbs" in r["meta"] and isinstance(r["meta"]["wbs"], str)
+
+    r2 = ops.list_tasks(workspace_id="1", include_wbs=False)
+    assert "wbs" not in r2["items"][0]
 
 
 def test_log_time_and_delete_time_entry() -> None:

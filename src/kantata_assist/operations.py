@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from kantata_assist.client import KantataAPIError, KantataClient
+from kantata_assist.story_wbs import attach_schedule_wbs
 
 # Kantata POST/PUT story.story_type enum (see Create / Update story API).
 _STORY_TYPES = frozenset({"task", "deliverable", "milestone", "issue"})
@@ -229,6 +230,7 @@ class KantataOperations:
         workspace_id: str,
         parent_story_id: str | None = None,
         search: str | None = None,
+        include_wbs: bool = True,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {"workspace_id": workspace_id, "include": "assignees"}
         if parent_story_id:
@@ -236,7 +238,14 @@ class KantataOperations:
         if search:
             params["search"] = search
         items = _paginate_all(self._c, "/stories", params)
-        return {"items": items, "meta": {"count": len(items)}}
+        meta: dict[str, Any] = {"count": len(items)}
+        if include_wbs:
+            attach_schedule_wbs(items)
+            meta["wbs"] = (
+                "client-computed from parent_id + position; matches Kantata schedule "
+                "when this payload includes all stories for the workspace."
+            )
+        return {"items": items, "meta": meta}
 
     def upsert_task(
         self,
