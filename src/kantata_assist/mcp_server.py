@@ -11,7 +11,7 @@ from kantata_assist.operations import operations_from_token, parse_optional_csv
 
 mcp = FastMCP(
     "kantata_assist",
-    instructions="Tools for Kantata OX (Mavenlink): projects, tasks, time, activity, users.",
+    instructions="Tools for Kantata OX (Mavenlink): projects, tasks, time, time off, activity, users.",
 )
 
 
@@ -274,6 +274,44 @@ def kantata_update_time_entry(
 def kantata_delete_time_entry(time_entry_id: str) -> str:
     """Delete one time entry by id. Fails if locked, invoiced, or linked to a time adjustment."""
     return _dump(_ops().delete_time_entry(time_entry_id=time_entry_id))
+
+
+@mcp.tool()
+def kantata_log_time_off(hours: float, requested_dates: str, user_id: str | None = None) -> str:
+    """Create account time off for one or more calendar days (POST /time_off_entries).
+
+    requested_dates: comma-separated ``YYYY-MM-DD``. The same ``hours`` is applied to each date (use quarter-hour
+    increments as recommended by Kantata). Entries for the same day may be merged server-side. Omit ``user_id``
+    to log for the current user (requires permission to log for others when set).
+    """
+    dates = parse_optional_csv(requested_dates)
+    return _dump(_ops().create_time_off_entries(requested_dates=dates, hours=hours, user_id=user_id))
+
+
+@mcp.tool()
+def kantata_list_time_off_entries(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    user_id: str | None = None,
+    only_mine: bool = False,
+    workspace_id: str | None = None,
+    include: str | None = None,
+) -> str:
+    """List time off entries visible on the account (GET /time_off_entries).
+
+    Optional filters: start_date / end_date (YYYY-MM-DD), user_id, workspace_id (project participants filter),
+    only_mine (current user; do not combine with user_id). include: Kantata associations, e.g. user.
+    """
+    return _dump(
+        _ops().list_time_off_entries(
+            start_date=start_date,
+            end_date=end_date,
+            user_id=user_id,
+            only_mine=only_mine,
+            workspace_id=workspace_id,
+            include=include,
+        )
+    )
 
 
 @mcp.tool()

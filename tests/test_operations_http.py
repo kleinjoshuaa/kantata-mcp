@@ -206,6 +206,80 @@ def test_list_tasks_single_page() -> None:
     assert "wbs" not in r2["items"][0]
 
 
+def test_create_time_off_entries_bulk() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and "/time_off_entries.json" in request.url.path:
+            body = json.loads(request.content.decode())
+            assert body["time_off_entries"] == [
+                {"user_id": 99, "hours": 8.0, "requested_date": "2026-04-20"},
+                {"user_id": 99, "hours": 8.0, "requested_date": "2026-04-21"},
+            ]
+            return httpx.Response(
+                200,
+                json={
+                    "count": 2,
+                    "results": [{"key": "time_off_entries", "id": "1"}, {"key": "time_off_entries", "id": "2"}],
+                    "time_off_entries": {"1": {"id": "1"}, "2": {"id": "2"}},
+                },
+            )
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    r = ops.create_time_off_entries(
+        requested_dates=["2026-04-20", "2026-04-21"],
+        hours=8,
+        user_id="99",
+    )
+    assert r["meta"]["count"] == 2
+
+
+def test_create_time_off_entries_defaults_user() -> None:
+    n = {"body": None}
+
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and "/time_off_entries.json" in request.url.path:
+            n["body"] = json.loads(request.content.decode())
+            return httpx.Response(
+                200,
+                json={"count": 1, "results": [{"key": "time_off_entries", "id": "1"}], "time_off_entries": {"1": {"id": "1"}}},
+            )
+        if request.method == "GET" and "/users/me.json" in request.url.path:
+            return httpx.Response(200, json={"id": "7", "full_name": "Me"})
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    ops.create_time_off_entries(requested_dates=["2026-05-01"], hours=4, user_id=None)
+    assert n["body"]["time_off_entries"][0]["user_id"] == 7
+
+
+def test_create_time_off_entries_requires_dates() -> None:
+    ops = operations_with_transport(lambda r: httpx.Response(500))
+    with pytest.raises(ValueError, match="at least one"):
+        ops.create_time_off_entries(requested_dates=[], hours=8)
+
+
+def test_list_time_off_entries() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and "/time_off_entries.json" in request.url.path:
+            assert "start_date=2026-04-01" in str(request.url)
+            assert "user_id=5" in str(request.url)
+            return httpx.Response(
+                200,
+                json={"count": 1, "results": [{"key": "time_off_entries", "id": "1"}], "time_off_entries": {"1": {"id": "1"}}},
+            )
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    r = ops.list_time_off_entries(start_date="2026-04-01", user_id="5")
+    assert r["meta"]["count"] == 1
+
+
+def test_list_time_off_entries_only_mine_conflict() -> None:
+    ops = operations_with_transport(lambda r: httpx.Response(500))
+    with pytest.raises(ValueError, match="only one"):
+        ops.list_time_off_entries(only_mine=True, user_id="1")
+
+
 def test_log_time_and_delete_time_entry() -> None:
     def h(request: httpx.Request) -> httpx.Response:
         if request.method == "POST" and "/time_entries.json" in request.url.path:
