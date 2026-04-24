@@ -347,7 +347,7 @@ def kantata_update_post(
 def kantata_link_post_to_task(post_id: str, story_id: str) -> str:
     """Link an existing activity post to a task (Kantata story). Does not change the post message.
 
-    Equivalent to ``kantata_update_post`` with only ``story_id`` set. Pass an empty ``story_id`` to unlink if the API allows.
+    Equivalent to ``kantata_update_post`` with only ``story_id`` set. Pass empty ``story_id`` to unlink if API allows.
     """
     return _dump(_ops().update_post(post_id=post_id, story_id=story_id))
 
