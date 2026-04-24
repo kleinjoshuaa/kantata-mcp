@@ -71,6 +71,41 @@ def test_kantata_update_post_tool_value_error(monkeypatch: pytest.MonkeyPatch) -
     assert "error" in out
 
 
+def test_kantata_log_time_off_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+    ops.create_time_off_entries.return_value = {"items": [{"id": "1"}], "meta": {"count": 1}}
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    out = mcp_server.kantata_log_time_off(hours=8.0, requested_dates="2026-04-20,2026-04-21", user_id=None)
+    assert "1" in out
+    ops.create_time_off_entries.assert_called_once_with(
+        requested_dates=["2026-04-20", "2026-04-21"],
+        hours=8.0,
+        user_id=None,
+    )
+
+
+def test_kantata_list_time_off_entries_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+    ops.list_time_off_entries.return_value = {"items": [], "meta": {"count": 0}}
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    mcp_server.kantata_list_time_off_entries(
+        start_date="2026-01-01",
+        end_date=None,
+        user_id=None,
+        only_mine=True,
+        workspace_id=None,
+        include=None,
+    )
+    ops.list_time_off_entries.assert_called_once_with(
+        start_date="2026-01-01",
+        end_date=None,
+        user_id=None,
+        only_mine=True,
+        workspace_id=None,
+        include=None,
+    )
+
+
 def test_kantata_link_post_to_task_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     ops = MagicMock()
     ops.update_post.return_value = {"items": [{"id": "9"}], "meta": {"count": 1}}

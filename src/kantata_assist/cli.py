@@ -279,6 +279,39 @@ def cmd_delete_time_entry(time_entry_id: str) -> None:
     _json(operations_from_token().delete_time_entry(time_entry_id=time_entry_id))
 
 
+@app.command("log-time-off")
+def cmd_log_time_off(
+    hours: float,
+    dates: Annotated[str, typer.Argument(help="Comma-separated YYYY-MM-DD")],
+    user_id: Annotated[str | None, typer.Option("--user", help="Kantata user id (default: you)")] = None,
+) -> None:
+    """Create time off entries for the given calendar dates (same hours each day)."""
+    ds = [d.strip() for d in dates.split(",") if d.strip()]
+    _json(operations_from_token().create_time_off_entries(requested_dates=ds, hours=hours, user_id=user_id))
+
+
+@app.command("list-time-off-entries")
+def cmd_list_time_off_entries(
+    start: Annotated[str | None, typer.Option("--from", help="YYYY-MM-DD")] = None,
+    end: Annotated[str | None, typer.Option("--to", help="YYYY-MM-DD")] = None,
+    user_id: Annotated[str | None, typer.Option("--user")] = None,
+    only_mine: Annotated[bool, typer.Option("--only-mine")] = False,
+    workspace: Annotated[str | None, typer.Option("--workspace")] = None,
+    include: Annotated[str | None, typer.Option("--include")] = None,
+) -> None:
+    """List time off entries (optionally filter by date range, user, workspace)."""
+    _json(
+        operations_from_token().list_time_off_entries(
+            start_date=start,
+            end_date=end,
+            user_id=user_id,
+            only_mine=only_mine,
+            workspace_id=workspace,
+            include=include,
+        )
+    )
+
+
 @app.command("submit-timesheet")
 def cmd_submit_timesheet(
     workspace_id: str,

@@ -447,6 +447,56 @@ class KantataOperations:
         self._c.delete(f"/time_entries/{time_entry_id}")
         return {"ok": True, "time_entry_id": time_entry_id}
 
+    def create_time_off_entries(
+        self,
+        *,
+        requested_dates: list[str],
+        hours: float,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create time off for one or more dates (POST /time_off_entries bulk ``time_off_entries``).
+
+        Each date becomes one row with the same ``hours`` (Kantata may merge multiple rows for the same day).
+        ``requested_dates`` values should be calendar dates, typically ``YYYY-MM-DD`` (ISO 8601 date).
+        Omit ``user_id`` to use the current token user.
+        """
+        dates = [d.strip() for d in requested_dates if d and str(d).strip()]
+        if not dates:
+            raise ValueError("requested_dates must contain at least one non-empty date")
+        uid = int(str(user_id).strip()) if user_id and str(user_id).strip() else int(self._current_user_id())
+        rows = [{"user_id": uid, "hours": float(hours), "requested_date": d} for d in dates]
+        data = self._c.post("/time_off_entries", json_body={"time_off_entries": rows})
+        return _wrap_items(data)
+
+    def list_time_off_entries(
+        self,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        user_id: str | None = None,
+        only_mine: bool = False,
+        workspace_id: str | None = None,
+        include: str | None = None,
+    ) -> dict[str, Any]:
+        """List time off entries (GET /time_off_entries). Paginates until exhausted."""
+        if only_mine and user_id:
+            raise ValueError("Use only one of only_mine and user_id")
+        params: dict[str, Any] = {}
+        if start_date:
+            params["start_date"] = start_date.strip()
+        if end_date:
+            params["end_date"] = end_date.strip()
+        if only_mine:
+            params["user_id"] = int(self._current_user_id())
+        elif user_id and str(user_id).strip():
+            params["user_id"] = int(str(user_id).strip())
+        if workspace_id and str(workspace_id).strip():
+            params["workspace_id"] = int(str(workspace_id).strip())
+        if include:
+            params["include"] = include
+        items = _paginate_all(self._c, "/time_off_entries", params if params else None)
+        return {"items": items, "meta": {"count": len(items)}}
+
     def submit_timesheet(
         self,
         *,
