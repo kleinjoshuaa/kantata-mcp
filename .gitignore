@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+*.spec.bak
+*.egg-info/
+.env
+*.local.json
+credentials.json
+.DS_Store
+sandbox-mcp-attachment.txt
