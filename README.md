@@ -1,6 +1,6 @@
 # Kantata Assist
 
-Kantata Assist is a small Python toolkit for [Kantata OX](https://developer.kantata.com/kantata/specification) (formerly Mavenlink): a **CLI** (`kantata`) and a **stdio MCP server** (`kantata-mcp`) so people can work with projects, tasks, time, and activity from the terminal or from AI tools such as Cursor.
+Kantata Assist is a small Python toolkit for [Kantata OX](https://developer.kantata.com/kantata/specification) (formerly Mavenlink): a **CLI** (`kantata`) and a **stdio MCP server** (`kantata-mcp`) so people can work with projects, tasks, time, time off, and activity from the terminal or from AI tools such as Cursor.
 
 This project is **not** affiliated with or endorsed by Kantata. It uses Kantata’s public **REST API v1** only. License: [MIT](LICENSE). Security reporting: [SECURITY.md](SECURITY.md).
 
@@ -169,6 +169,35 @@ With **uvx**, prefix the same commands as in option A, for example
 `uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata whoami`.
 
 Use `kantata --help` and `kantata <command> --help` for the full command list (tasks, time, posts, join/leave project, etc.).
+
+### MCP tools (`kantata-mcp`)
+
+The stdio MCP server exposes the tools below (names are stable for clients such as Cursor). Each runs as the authenticated Kantata user unless noted.
+
+| Tool | What it does |
+|------|----------------|
+| `kantata_whoami` | Return the current user (id, name, email, etc.). |
+| `kantata_list_users` | List or search users (by workspace, name search, exact email, or account-wide). |
+| `kantata_list_projects` | List workspaces you participate in; optional text search. |
+| `kantata_list_joinable_projects` | List projects you can join but are not on yet. |
+| `kantata_join_project` | Add yourself to a workspace (default role: maven). |
+| `kantata_leave_project` | Remove your participation from a workspace. |
+| `kantata_list_tasks` | List stories/tasks for a project; optional parent filter, search, and WBS labels. |
+| `kantata_get_story` | Fetch one task/story by id. |
+| `kantata_create_task` | Create a task (or milestone/issue); optional parent, description, assign self. |
+| `kantata_update_task` | Update title, description, parent, type, or replace assignees with yourself. |
+| `kantata_adjust_task_assignees` | Add or remove assignees without replacing everyone (or full replace). |
+| `kantata_delete_task` | Soft-delete a task/story. |
+| `kantata_log_time` | Create a project time entry (date, minutes, optional task and notes). |
+| `kantata_list_time_entries` | List time entries with optional workspace, date range, user, and includes. |
+| `kantata_update_time_entry` | Change notes, date, duration, task link, or billable flag on a time entry. |
+| `kantata_delete_time_entry` | Delete one time entry by id. |
+| `kantata_log_time_off` | Create account time off for one or more dates (hours per day; optional user id). |
+| `kantata_list_time_off_entries` | List time off entries (date range, user, workspace, etc.). |
+| `kantata_submit_timesheet` | Submit a timesheet for a workspace and date range. |
+| `kantata_post_project_update` | Post to project activity; optional attachments, private recipients, linked task. |
+| `kantata_update_post` | Edit an existing activity post (message and/or link to a task). |
+| `kantata_link_post_to_task` | Link an existing post to a task without changing the message. |
 
 ### MCP server in Cursor (or similar)
 
