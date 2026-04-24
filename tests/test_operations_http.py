@@ -227,6 +227,33 @@ def test_log_time_and_delete_time_entry() -> None:
     assert ops.delete_time_entry(time_entry_id="88")["ok"] is True
 
 
+def test_update_time_entry() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT" and request.url.path.endswith("/time_entries/88.json"):
+            body = json.loads(request.content.decode())
+            assert body == {"time_entry": {"notes": "test note", "time_in_minutes": 60}}
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "results": [{"key": "time_entries", "id": "88"}],
+                    "time_entries": {"88": {"id": "88", "notes": "test note", "time_in_minutes": 60}},
+                },
+            )
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    r = ops.update_time_entry(time_entry_id="88", notes="test note", time_in_minutes=60)
+    assert r["items"][0]["id"] == "88"
+    assert r["items"][0]["notes"] == "test note"
+
+
+def test_update_time_entry_requires_field() -> None:
+    ops = operations_with_transport(lambda r: httpx.Response(500))
+    with pytest.raises(ValueError, match="Provide at least one"):
+        ops.update_time_entry(time_entry_id="88")
+
+
 def test_list_time_entries_paginates() -> None:
     n = {"call": 0}
 
@@ -273,6 +300,7 @@ def test_post_project_update_no_attachments() -> None:
         body = json.loads(request.content.decode())
         assert body["posts"][0]["message"] == "Hi"
         assert body["posts"][0]["workspace_id"] == 1
+        assert "recipient_ids" not in body["posts"][0]
         return httpx.Response(
             200,
             json={"count": 1, "results": [{"key": "posts", "id": "1"}], "posts": {"1": {"id": "1"}}},
@@ -282,10 +310,128 @@ def test_post_project_update_no_attachments() -> None:
     ops.post_project_update(workspace_id="1", message="Hi")
 
 
+def test_post_project_update_story_id() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        assert body["posts"][0]["message"] == "Hi"
+        assert body["posts"][0]["story_id"] == 55
+        return httpx.Response(
+            200,
+            json={"count": 1, "results": [{"key": "posts", "id": "1"}], "posts": {"1": {"id": "1"}}},
+        )
+
+    ops = operations_with_transport(h)
+    ops.post_project_update(workspace_id="1", message="Hi", story_id="55")
+
+
+def test_post_project_update_recipient_user_ids() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        assert body["posts"][0]["recipient_ids"] == [2, 3]
+        return httpx.Response(
+            200,
+            json={"count": 1, "results": [{"key": "posts", "id": "1"}], "posts": {"1": {"id": "1"}}},
+        )
+
+    ops = operations_with_transport(h)
+    ops.post_project_update(
+        workspace_id="1",
+        message="Hi",
+        recipient_user_ids=["2", "3"],
+    )
+
+
+def test_post_project_update_recipient_emails_resolved() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and "/users.json" in request.url.path:
+            assert "participant_in=1" in str(request.url).replace("%2C", ",")
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "results": [{"key": "users", "id": "9"}],
+                    "users": {"9": {"id": "9", "email_address": "nobody@example.com"}},
+                },
+            )
+        if request.method == "POST" and "/posts.json" in request.url.path:
+            body = json.loads(request.content.decode())
+            assert body["posts"][0]["recipient_ids"] == [2, 9]
+            return httpx.Response(
+                200,
+                json={"count": 1, "results": [{"key": "posts", "id": "1"}], "posts": {"1": {"id": "1"}}},
+            )
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    ops.post_project_update(
+        workspace_id="1",
+        message="Hi",
+        recipient_user_ids=["2"],
+        recipient_emails=["nobody@example.com"],
+    )
+
+
+def test_post_project_update_recipient_email_not_found() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and "/users.json" in request.url.path:
+            return httpx.Response(200, json={"count": 0, "results": [], "users": {}})
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    with pytest.raises(ValueError, match="No Kantata user with email"):
+        ops.post_project_update(
+            workspace_id="1",
+            message="Hi",
+            recipient_emails=["missing@example.com"],
+        )
+
+
 def test_post_project_update_missing_file() -> None:
     ops = operations_with_transport(lambda r: httpx.Response(500))
     with pytest.raises(FileNotFoundError):
         ops.post_project_update(workspace_id="1", message="x", attachment_paths=["/no/such/file.txt"])
+
+
+def test_update_post_message() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT" and request.url.path.endswith("/posts/99.json"):
+            body = json.loads(request.content.decode())
+            assert body == {"post": {"message": "<p>revised</p>"}}
+            return httpx.Response(
+                200,
+                json={
+                    "count": 1,
+                    "results": [{"key": "posts", "id": "99"}],
+                    "posts": {"99": {"id": "99", "message": "<p>revised</p>"}},
+                },
+            )
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    r = ops.update_post(post_id="99", message="<p>revised</p>")
+    assert r["items"][0]["id"] == "99"
+    assert r["items"][0]["message"] == "<p>revised</p>"
+
+
+def test_update_post_story_id() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        if request.method == "PUT" and request.url.path.endswith("/posts/99.json"):
+            body = json.loads(request.content.decode())
+            assert body == {"post": {"story_id": 42}}
+            return httpx.Response(
+                200,
+                json={"count": 1, "results": [{"key": "posts", "id": "99"}], "posts": {"99": {"id": "99"}}},
+            )
+        raise AssertionError(request.url)
+
+    ops = operations_with_transport(h)
+    ops.update_post(post_id="99", story_id="42")
+
+
+def test_update_post_requires_field() -> None:
+    ops = operations_with_transport(lambda r: httpx.Response(500))
+    with pytest.raises(ValueError, match="Provide at least one"):
+        ops.update_post(post_id="99")
 
 
 def test_upload_post_attachment_server_small_file(tmp_path: Path) -> None:

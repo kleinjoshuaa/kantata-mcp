@@ -27,6 +27,59 @@ def test_kantata_list_projects_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     ops.list_my_projects.assert_called_once_with(search=None)
 
 
+def test_kantata_update_time_entry_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+    ops.update_time_entry.return_value = {"items": [{"id": "1"}], "meta": {"count": 1}}
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    out = mcp_server.kantata_update_time_entry(
+        time_entry_id="1",
+        notes="x",
+        date_performed=None,
+        time_in_minutes=None,
+        story_id=None,
+        billable=None,
+    )
+    assert "1" in out
+    ops.update_time_entry.assert_called_once_with(
+        time_entry_id="1",
+        notes="x",
+        date_performed=None,
+        time_in_minutes=None,
+        story_id=None,
+        billable=None,
+    )
+
+
+def test_kantata_update_post_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+    ops.update_post.return_value = {"items": [{"id": "1"}], "meta": {"count": 1}}
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    out = mcp_server.kantata_update_post(post_id="1", message="hi", story_id=None)
+    assert "1" in out
+    ops.update_post.assert_called_once_with(post_id="1", message="hi", story_id=None)
+
+
+def test_kantata_update_post_tool_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+
+    def boom(**_kwargs: object) -> dict:
+        raise ValueError("Provide at least one")
+
+    ops.update_post.side_effect = boom
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    out = mcp_server.kantata_update_post(post_id="1", message=None, story_id=None)
+    assert "error" in out
+
+
+def test_kantata_link_post_to_task_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+    ops.update_post.return_value = {"items": [{"id": "9"}], "meta": {"count": 1}}
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    out = mcp_server.kantata_link_post_to_task(post_id="9", story_id="55")
+    assert "9" in out
+    ops.update_post.assert_called_once_with(post_id="9", story_id="55")
+
+
 def test_kantata_post_project_update_file_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
     ops = MagicMock()
     monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
@@ -40,6 +93,7 @@ def test_kantata_post_project_update_file_not_found(monkeypatch: pytest.MonkeyPa
         message="hi",
         attachment_paths=["/no/such/file"],
         attachment_ids=None,
+        story_id=None,
     )
     assert "error" in out
     assert "/no/such/file" in out

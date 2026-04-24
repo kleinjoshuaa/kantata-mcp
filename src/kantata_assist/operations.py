@@ -25,10 +25,15 @@ def _coerce_story_type(value: str) -> str:
     return s
 
 
-def _parse_csv_user_ids(value: str | None) -> list[str]:
+def parse_optional_csv(value: str | None) -> list[str]:
+    """Split a comma-separated string into stripped non-empty tokens (user ids, emails, etc.)."""
     if value is None or not str(value).strip():
         return []
     return [p.strip() for p in str(value).split(",") if p.strip()]
+
+
+def _parse_csv_user_ids(value: str | None) -> list[str]:
+    return parse_optional_csv(value)
 
 
 def _meta(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -373,6 +378,39 @@ class KantataOperations:
         data = self._c.post("/time_entries", json_body={"time_entries": [row]})
         return _wrap_items(data)
 
+    def update_time_entry(
+        self,
+        *,
+        time_entry_id: str,
+        notes: str | None = None,
+        date_performed: str | None = None,
+        time_in_minutes: int | None = None,
+        story_id: str | None = None,
+        billable: bool | None = None,
+    ) -> dict[str, Any]:
+        """Update a time entry (PUT /time_entries/{id}). Provide at least one field to change."""
+        patch: dict[str, Any] = {}
+        if notes is not None:
+            patch["notes"] = notes
+        if date_performed is not None:
+            patch["date_performed"] = date_performed
+        if time_in_minutes is not None:
+            patch["time_in_minutes"] = int(time_in_minutes)
+        if story_id is not None:
+            s = str(story_id).strip()
+            patch["story_id"] = int(s) if s else None
+        if billable is not None:
+            patch["billable"] = bool(billable)
+        if not patch:
+            raise ValueError(
+                "Provide at least one of: notes, date_performed, time_in_minutes, story_id, billable"
+            )
+        data = self._c.put(
+            f"/time_entries/{time_entry_id}",
+            json_body={"time_entry": patch},
+        )
+        return _wrap_items(data)
+
     def list_time_entries(
         self,
         *,
@@ -478,6 +516,40 @@ class KantataOperations:
             return self._upload_post_attachment_server(path)
         return self._upload_post_attachment_cdn(path)
 
+    def _recipient_ids_for_post(
+        self,
+        *,
+        workspace_id: str,
+        recipient_user_ids: list[str] | None,
+        recipient_emails: list[str] | None,
+    ) -> list[int]:
+        """Merge explicit user ids with ids resolved from emails (workspace participants only)."""
+        out: list[int] = []
+        seen: set[str] = set()
+        for raw in recipient_user_ids or []:
+            s = str(raw).strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            out.append(int(s))
+        for em in recipient_emails or []:
+            e = str(em).strip()
+            if not e:
+                continue
+            r = self.list_users(workspace_id=workspace_id, by_email_address=e)
+            items = r.get("items") or []
+            if not items:
+                raise ValueError(
+                    f"No Kantata user with email {e!r} found as a participant in workspace {workspace_id}. "
+                    "Add them to the project first, or use recipient user ids from kantata_list_users."
+                )
+            uid = str(items[0]["id"])
+            if uid in seen:
+                continue
+            seen.add(uid)
+            out.append(int(uid))
+        return out
+
     def post_project_update(
         self,
         *,
@@ -485,6 +557,9 @@ class KantataOperations:
         message: str,
         attachment_paths: list[str] | None = None,
         attachment_ids: list[str] | None = None,
+        recipient_user_ids: list[str] | None = None,
+        recipient_emails: list[str] | None = None,
+        story_id: str | None = None,
     ) -> dict[str, Any]:
         ids: list[str] = list(attachment_ids or [])
         for p in attachment_paths or []:
@@ -496,9 +571,41 @@ class KantataOperations:
             "workspace_id": int(workspace_id),
             "message": message,
         }
+        if story_id is not None and str(story_id).strip():
+            post["story_id"] = int(str(story_id).strip())
         if ids:
             post["attachment_ids"] = [int(x) for x in ids]
+        rid = self._recipient_ids_for_post(
+            workspace_id=workspace_id,
+            recipient_user_ids=recipient_user_ids,
+            recipient_emails=recipient_emails,
+        )
+        if rid:
+            post["recipient_ids"] = rid
         data = self._c.post("/posts", json_body={"posts": [post]})
+        return _wrap_items(data)
+
+    def update_post(
+        self,
+        *,
+        post_id: str,
+        message: str | None = None,
+        story_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a workspace activity post (PUT /posts/{id}).
+
+        Kantata accepts ``post.message`` (HTML/plain per product rules) and optional ``post.story_id``
+        to link the post to a task. Provide at least one of message or story_id.
+        """
+        patch: dict[str, Any] = {}
+        if message is not None:
+            patch["message"] = message
+        if story_id is not None:
+            s = str(story_id).strip()
+            patch["story_id"] = int(s) if s else None
+        if not patch:
+            raise ValueError("Provide at least one of: message, story_id")
+        data = self._c.put(f"/posts/{post_id}", json_body={"post": patch})
         return _wrap_items(data)
 
 

@@ -10,7 +10,7 @@ import typer
 
 from kantata_assist.client import KantataAPIError
 from kantata_assist.oauth import login_interactive
-from kantata_assist.operations import operations_from_token
+from kantata_assist.operations import operations_from_token, parse_optional_csv
 
 app = typer.Typer(
     name="kantata",
@@ -300,6 +300,21 @@ def cmd_post_update(
     workspace_id: str,
     message: str,
     attach: Annotated[str | None, typer.Option("--attach", help="Comma-separated local file paths")] = None,
+    recipients: Annotated[
+        str | None,
+        typer.Option("--recipients", help="Comma-separated Kantata user ids (private post)"),
+    ] = None,
+    recipient_emails: Annotated[
+        str | None,
+        typer.Option(
+            "--recipient-emails",
+            help="Comma-separated emails; each must match a workspace participant (resolved to user ids)",
+        ),
+    ] = None,
+    story_id: Annotated[
+        str | None,
+        typer.Option("--story-id", help="Task (story) id to link this post to"),
+    ] = None,
 ) -> None:
     """Post to project activity; use --attach with comma-separated file paths."""
     paths = [p.strip() for p in attach.split(",") if p.strip()] if attach else None
@@ -308,6 +323,9 @@ def cmd_post_update(
             workspace_id=workspace_id,
             message=message,
             attachment_paths=paths,
+            recipient_user_ids=parse_optional_csv(recipients),
+            recipient_emails=parse_optional_csv(recipient_emails),
+            story_id=story_id,
         )
     )
 
@@ -321,6 +339,9 @@ def main() -> None:
             typer.echo(e.body, err=True)
         sys.exit(1)
     except RuntimeError as e:
+        typer.echo(str(e), err=True)
+        sys.exit(1)
+    except ValueError as e:
         typer.echo(str(e), err=True)
         sys.exit(1)
 

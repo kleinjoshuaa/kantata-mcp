@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from kantata_assist.operations import operations_from_token
+from kantata_assist.operations import operations_from_token, parse_optional_csv
 
 mcp = FastMCP(
     "kantata_assist",
@@ -245,6 +245,32 @@ def kantata_list_time_entries(
 
 
 @mcp.tool()
+def kantata_update_time_entry(
+    time_entry_id: str,
+    notes: str | None = None,
+    date_performed: str | None = None,
+    time_in_minutes: int | None = None,
+    story_id: str | None = None,
+    billable: bool | None = None,
+) -> str:
+    """Update an existing time entry (PUT /time_entries/{id}). date_performed is YYYY-MM-DD.
+
+    Pass at least one optional field besides time_entry_id. Omitted fields are left unchanged.
+    story_id: set to a task id, or pass an empty string to clear the task association if the API allows it.
+    """
+    return _dump(
+        _ops().update_time_entry(
+            time_entry_id=time_entry_id,
+            notes=notes,
+            date_performed=date_performed,
+            time_in_minutes=time_in_minutes,
+            story_id=story_id,
+            billable=billable,
+        )
+    )
+
+
+@mcp.tool()
 def kantata_delete_time_entry(time_entry_id: str) -> str:
     """Delete one time entry by id. Fails if locked, invoiced, or linked to a time adjustment."""
     return _dump(_ops().delete_time_entry(time_entry_id=time_entry_id))
@@ -268,8 +294,18 @@ def kantata_post_project_update(
     message: str,
     attachment_paths: list[str] | None = None,
     attachment_ids: list[str] | None = None,
+    recipient_user_ids: str | None = None,
+    recipient_emails: str | None = None,
+    story_id: str | None = None,
 ) -> str:
-    """Post to the project activity feed. Optional attachment_paths are local files the server can read."""
+    """Post to the project activity feed. Optional attachment_paths are local files the server can read.
+
+    Private posts: pass recipient_user_ids and/or recipient_emails as comma-separated values.
+    Emails are resolved with GET /users (by_email_address + participant_in workspace); each address must
+    match a user who already participates on the project. Kantata does not accept arbitrary non-user emails
+    on POST /posts—only user ids after resolution.
+    story_id: optional task (story) id to link this post to that task.
+    """
     try:
         return _dump(
             _ops().post_project_update(
@@ -277,10 +313,43 @@ def kantata_post_project_update(
                 message=message,
                 attachment_paths=attachment_paths,
                 attachment_ids=attachment_ids,
+                recipient_user_ids=parse_optional_csv(recipient_user_ids),
+                recipient_emails=parse_optional_csv(recipient_emails),
+                story_id=story_id,
             )
         )
     except FileNotFoundError as e:
         return _dump({"error": str(e)})
+    except ValueError as e:
+        return _dump({"error": str(e)})
+
+
+@mcp.tool()
+def kantata_update_post(
+    post_id: str,
+    message: str | None = None,
+    story_id: str | None = None,
+) -> str:
+    """Edit an existing project activity post (PUT /posts/{id}).
+
+    Provide at least one of ``message`` or ``story_id``. Omitted arguments leave those attributes unchanged.
+    To link or relink the post to a task, set ``story_id`` to the task id (or use ``kantata_link_post_to_task``).
+    ``message`` may include HTML for rich text (same as new posts). ``story_id``: use an empty string to send
+    null and unlink the post from a task if the API allows it.
+    """
+    try:
+        return _dump(_ops().update_post(post_id=post_id, message=message, story_id=story_id))
+    except ValueError as e:
+        return _dump({"error": str(e)})
+
+
+@mcp.tool()
+def kantata_link_post_to_task(post_id: str, story_id: str) -> str:
+    """Link an existing activity post to a task (Kantata story). Does not change the post message.
+
+    Equivalent to ``kantata_update_post`` with only ``story_id`` set. Pass an empty ``story_id`` to unlink if the API allows.
+    """
+    return _dump(_ops().update_post(post_id=post_id, story_id=story_id))
 
 
 def main() -> None:
