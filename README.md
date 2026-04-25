@@ -59,13 +59,18 @@ Recommended controls:
 
 ### What to give each user
 
-At minimum, users who will use **OAuth** need:
+At minimum, users need one of these auth paths:
 
-- **Client ID** and **client secret** for the app you registered (unless you use a different org-wide pattern they already have).
-- The **redirect URI** (and port) they must register or that you pre-registered.
-- Optional: non-default **API base** if your tenant uses a different host than the tool default (`https://api.mavenlink.com/api/v1`), via **`KANTATA_API_BASE`**.
+- **Direct OAuth (local callback):**
+  - **Client ID** and **client secret** for the app you registered.
+  - The **redirect URI** (and port) they must use (`http://127.0.0.1:8765/callback` by default, or your approved variant).
+- **Brokered OAuth (Apps Script or similar):**
+  - The broker base URL (for `kantata login --broker-url ...`, or provide `KANTATA_OAUTH_BROKER_URL`).
+  - Any broker access constraints you require (for example approved Google Workspace account/domain).
+- **Bearer token only:**
+  - A Kantata OAuth bearer token and your rotation/revocation procedure.
 
-Users who will use only a **bearer token** need the token (and rotation procedure), not the OAuth pair.
+Optional for all paths: non-default **API base** via **`KANTATA_API_BASE`** if your tenant does not use `https://api.mavenlink.com/api/v1`.
 
 ---
 
