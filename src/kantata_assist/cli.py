@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 
 from kantata_assist.client import KantataAPIError
+from kantata_assist.config import save_credentials_from_payload
 from kantata_assist.oauth import login_interactive
 from kantata_assist.operations import operations_from_token, parse_optional_csv
 
@@ -33,6 +35,47 @@ def login(
 ) -> None:
     """OAuth2 login: opens browser, saves access token to credentials file."""
     login_interactive(redirect_port=port, open_browser=not no_browser)
+
+
+@app.command("import-credentials")
+def import_credentials(
+    file: Annotated[
+        Path | None,
+        typer.Option("--file", help="Read token JSON from this file (otherwise stdin)"),
+    ] = None,
+) -> None:
+    """Write credentials.json from JSON (stdin or --file). For org-issued tokens (e.g. Google Apps Script)."""
+    raw: str
+    if file is not None:
+        raw = file.read_text(encoding="utf-8")
+    else:
+        if sys.stdin.isatty():
+            typer.echo(
+                "Provide token JSON on stdin (pipe or heredoc) or use --file PATH.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        raw = sys.stdin.read()
+        if not raw.strip():
+            typer.echo(
+                "No JSON on stdin. Pipe token JSON in or use --file PATH.",
+                err=True,
+            )
+            raise typer.Exit(1)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        typer.echo(f"Invalid JSON: {e}", err=True)
+        raise typer.Exit(1) from e
+    if not isinstance(data, dict):
+        typer.echo("JSON must be an object at the top level.", err=True)
+        raise typer.Exit(1)
+    try:
+        path = save_credentials_from_payload(data)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    typer.echo(f"Wrote credentials to {path}")
 
 
 @app.command("whoami")

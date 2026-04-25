@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import urllib.parse
 import webbrowser
@@ -11,6 +10,8 @@ from pathlib import Path
 from threading import Thread
 
 import httpx
+
+from kantata_assist.config import save_credentials_from_payload
 
 DEFAULT_AUTHORIZE = "https://app.mavenlink.com/oauth/authorize"
 DEFAULT_TOKEN = "https://app.mavenlink.com/oauth/token"
@@ -171,15 +172,6 @@ def login_interactive(
     if not isinstance(access, str):
         raise RuntimeError(f"Unexpected token response: {token_payload!r}")
 
-    path = credentials_path or Path(os.environ.get("KANTATA_CREDENTIALS_PATH") or "").expanduser()
-    if not path or str(path) == ".":
-        path = Path.home() / ".config" / "kantata" / "credentials.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    out = {"access_token": access, "token_type": token_payload.get("token_type", "bearer")}
-    path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    path = save_credentials_from_payload(token_payload, credentials_path=credentials_path)
     print(f"Wrote credentials to {path}")
     return path
