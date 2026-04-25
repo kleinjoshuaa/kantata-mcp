@@ -241,7 +241,7 @@ def test_create_time_off_entries_defaults_user() -> None:
             n["body"] = json.loads(request.content.decode())
             return httpx.Response(
                 200,
-                json={"count": 1, "results": [{"key": "time_off_entries", "id": "1"}], "time_off_entries": {"1": {"id": "1"}}},
+                json={"count": 1, "results": [{"key": "time_off_entries", "id": "1"}], "time_off_entries": {"1": {"id": "1"}}},  # noqa: E501
             )
         if request.method == "GET" and "/users/me.json" in request.url.path:
             return httpx.Response(200, json={"id": "7", "full_name": "Me"})
@@ -265,7 +265,7 @@ def test_list_time_off_entries() -> None:
             assert "user_id=5" in str(request.url)
             return httpx.Response(
                 200,
-                json={"count": 1, "results": [{"key": "time_off_entries", "id": "1"}], "time_off_entries": {"1": {"id": "1"}}},
+                json={"count": 1, "results": [{"key": "time_off_entries", "id": "1"}], "time_off_entries": {"1": {"id": "1"}}},  # noqa: E501
             )
         raise AssertionError(request.url)
 

@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from kantata_assist.config import default_credentials_path, load_access_token, load_api_base
+from kantata_assist.config import (
+    default_credentials_path,
+    load_access_token,
+    load_api_base,
+    save_credentials_from_payload,
+)
 from kantata_assist.operations import KantataOperations, operations_from_token
 
 
@@ -21,6 +26,32 @@ def test_default_credentials_path_home(monkeypatch: pytest.MonkeyPatch, tmp_path
     monkeypatch.delenv("KANTATA_CREDENTIALS_PATH", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     assert default_credentials_path() == tmp_path / ".config" / "kantata" / "credentials.json"
+
+
+def test_save_credentials_from_payload(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("KANTATA_CREDENTIALS_PATH", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    out_path = save_credentials_from_payload({"access_token": "  tok  ", "token_type": "Bearer"})
+    assert out_path == tmp_path / ".config" / "kantata" / "credentials.json"
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    assert data == {"access_token": "tok", "token_type": "Bearer"}
+
+
+def test_save_credentials_from_payload_refresh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    cred = tmp_path / "c.json"
+    save_credentials_from_payload(
+        {"access_token": "a", "refresh_token": " r "},
+        credentials_path=cred,
+    )
+    data = json.loads(cred.read_text(encoding="utf-8"))
+    assert data["access_token"] == "a"
+    assert data["refresh_token"] == "r"
+    assert data["token_type"] == "bearer"
+
+
+def test_save_credentials_from_payload_requires_access_token(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="access_token"):
+        save_credentials_from_payload({}, credentials_path=tmp_path / "x.json")
 
 
 def test_load_access_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:

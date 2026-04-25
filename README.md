@@ -34,6 +34,20 @@ Kantata Assist runs a **short-lived HTTP server on the user’s machine** only d
 
 Some organizations prefer not to distribute an OAuth client secret to every user. If Kantata or your SSO flow provides a **user API token** (or similar) that is acceptable under your policy, users can set **`KANTATA_ACCESS_TOKEN`** and never run `kantata login`. You remain responsible for how that token is issued, rotated, and revoked.
 
+### Org-hosted OAuth (Google Apps Script) (optional)
+
+To keep the **client id and client secret off end-user machines**, you can host the authorization-code exchange in a **Google Apps Script** project deployed as a **Web app**:
+
+1. Create a Kantata OAuth application as above, but register the **Web app URL** (from **Deploy** in Apps Script) as the **only** redirect URI you use for this flow—**exactly** as shown by Google (often `https://script.google.com/.../exec`).
+2. Store **`KANTATA_CLIENT_ID`**, **`KANTATA_CLIENT_SECRET`**, and **`KANTATA_REDIRECT_URI`** (same URL) in **Project settings → Script properties**. Only people who can edit the script should see the secret.
+3. The script redirects users to Kantata’s authorize URL, receives the **`code`** on redirect, POSTs to **`https://app.mavenlink.com/oauth/token`**, and shows JSON with **`access_token`** and **`token_type`** for the user to import locally.
+
+A reference script is in [`extras/kantata-oauth-webapp/Code.gs`](extras/kantata-oauth-webapp/Code.gs). Users run **`kantata import-credentials`** (see section 2) to write `~/.config/kantata/credentials.json` from that JSON.
+
+**If the browser shows “refused to connect” to Kantata** (DevTools HAR: request to `app.mavenlink.com` with **status 0**, **Referer** from `*.googleusercontent.com`): the Web App is running inside Google’s **sandbox iframe**. Redirecting with `window.location` only replaces that iframe; Kantata’s login must open in the **full tab** (`window.top` / `target="_top"`). Copy the latest [`Code.gs`](extras/kantata-oauth-webapp/Code.gs) into your project and **redeploy** the Web app.
+
+Per Kantata’s API documentation, OAuth **access tokens do not time-expire** until the user revokes the application; the **authorization code** is short-lived (exchange it within a few minutes).
+
 ### Governance checklist
 
 - **Roles:** Confirm who may create OAuth apps and use the API (often account administrators). See Kantata’s [API overview](https://knowledge.kantata.com/hc/en-us/articles/202811760-Kantata-API-Overview).
@@ -43,11 +57,13 @@ Some organizations prefer not to distribute an OAuth client secret to every user
 
 ### What to give each user
 
-At minimum, users who will use **OAuth** need:
+At minimum, users who will use **local** OAuth (`kantata login`) need:
 
 - **Client ID** and **client secret** for the app you registered (unless you use a different org-wide pattern they already have).
 - The **redirect URI** (and port) they must register or that you pre-registered.
 - Optional: non-default **API base** if your tenant uses a different host than the tool default (`https://api.mavenlink.com/api/v1`), via **`KANTATA_API_BASE`**.
+
+If you use **Google Apps Script** (or another org-hosted exchange), users need only the **bookmark URL** for that web app and the **`kantata import-credentials`** steps in section 2—not the client secret.
 
 Users who will use only a **bearer token** need the token (and rotation procedure), not the OAuth pair.
 
@@ -60,9 +76,9 @@ This section is for **you** if you want the CLI and/or MCP server on your comput
 ### TL;DR
 
 1. **Pick how you get the tools** — Easiest: **Option A** (`uvx` from git, no clone). Or **Option B** (clone the repo and install into a venv). Both are spelled out below.
-2. **Get Kantata credentials from your admin** — Usually **OAuth client ID + client secret** (for `kantata login`), or sometimes a **bearer access token** only. If you are not sure what to ask for, read **section 1** above.
+2. **Get Kantata credentials from your admin** — Usually **OAuth client ID + client secret** (for `kantata login`), an **org-hosted login URL** plus **`kantata import-credentials`** (no secret on your machine), or a **bearer access token** only. If you are not sure what to ask for, read **section 1** above.
 3. **Add the MCP server to your client** — In Cursor (or similar), add a `kantata` entry with **`uvx`**, **`--from`**, **`git+https://github.com/kleinjoshuaa/kantata-mcp.git`**, and **`kantata-mcp`** (full example under **MCP server in Cursor** below). You can **omit the whole `env` block** if you will use the default token file after login.
-4. **Sign in once from a terminal** — **OAuth:** set **`KANTATA_CLIENT_ID`** and **`KANTATA_CLIENT_SECRET`**, then run **`kantata login`** (prefix with **`uvx --from …`** if you use Option A). **Bearer only:** set **`KANTATA_ACCESS_TOKEN`** and skip login. (See **Sign in with OAuth** / **Sign in with a bearer token** below.)
+4. **Sign in once from a terminal** — **OAuth (local):** set **`KANTATA_CLIENT_ID`** and **`KANTATA_CLIENT_SECRET`**, then run **`kantata login`**. **OAuth (org script):** open your org’s Apps Script URL, then pipe or paste the JSON into **`kantata import-credentials`** (see **Import credentials from JSON** below). **Bearer only:** set **`KANTATA_ACCESS_TOKEN`** and skip login. (Prefix with **`uvx --from …`** if you use Option A.)
 5. **Restart or refresh MCP in the IDE** — So the server reloads your saved token or updated `env`. If auth fails, check that MCP `env` does not set a stale **`KANTATA_ACCESS_TOKEN`** that overrides your credentials file.
 
 ### Prerequisites
@@ -99,6 +115,22 @@ uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata list-proj
 ```
 
 Shorter shell life: define a tiny alias or script that prepends `uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git` before `kantata …`.
+
+#### Import credentials from JSON (`uvx` one-liners)
+
+If your admin gave you token JSON (for example from a **Google Apps Script** page after Kantata consent), write the default credentials file without hand-editing paths:
+
+```bash
+# macOS: JSON is on the clipboard after copying from the browser
+pbpaste | uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata import-credentials
+```
+
+```bash
+# From a saved file
+uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata import-credentials --file ~/Downloads/kantata-token.json
+```
+
+The JSON must include a string **`access_token`** (and may include **`token_type`**; default is `bearer`). Set **`KANTATA_CREDENTIALS_PATH`** first if you want a non-default file path.
 
 ### Option B — Clone and install into a venv
 
@@ -141,6 +173,26 @@ You then run **`kantata`** and **`kantata-mcp`** from that environment.
 **Port in use:** run `kantata login --port 8899` (example) and ensure that redirect URI is registered in Kantata, or set **`KANTATA_OAUTH_CALLBACK_PORT`** to match what is registered.
 
 **Custom credentials file:** set **`KANTATA_CREDENTIALS_PATH`** to an absolute path before login and when running MCP so every component reads the same file.
+
+### Import credentials from JSON
+
+Use this when an **org-hosted** flow (for example **Google Apps Script**) returns Kantata token JSON and you do not have **`KANTATA_CLIENT_ID`** / **`KANTATA_CLIENT_SECRET`** on your machine.
+
+1. Obtain JSON containing at least **`access_token`** (same shape as after `kantata login`).
+2. Run **`kantata import-credentials`** with that JSON on **stdin**, or pass **`--file /path/to/token.json`**.
+3. The tool writes **`~/.config/kantata/credentials.json`** (or **`KANTATA_CREDENTIALS_PATH`**) with mode **`0600`** on Unix.
+
+Examples (option B after `uv pip install`; use the **`uvx`** lines from option A if you do not have a venv):
+
+```bash
+pbpaste | kantata import-credentials
+```
+
+```bash
+kantata import-credentials --file ./kantata-token.json
+```
+
+Interactive terminal with no pipe: use **`--file`** or a heredoc, for example **`kantata import-credentials <<'EOF'`** … **`EOF`**.
 
 ### Sign in with a bearer token only
 
@@ -210,7 +262,7 @@ So if you ran **`kantata login`** with defaults and do not set **`KANTATA_ACCESS
 
 **Using `uvx` (no path to a venv binary):** `uv` must be on your **`PATH`** when the IDE starts the server.
 
-To keep **OAuth client id and secret out of `mcp.json`**, run **`kantata login`** in a terminal first (export `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET` there only for that session). The MCP server uses the saved **access token** file, not the OAuth pair.
+To keep **OAuth client id and secret out of `mcp.json`**, run **`kantata login`** in a terminal first (export `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET` there only for that session), or run **`kantata import-credentials`** after getting JSON from an org-hosted script. The MCP server uses the saved **access token** file, not the OAuth pair.
 
 **Minimal config** (default token file after `kantata login`):
 
@@ -235,7 +287,7 @@ Add **`KANTATA_API_BASE`** in `env` only if your admin said so.
 
 **After `kantata login`:** restart the MCP server in the IDE so it reloads the token file.
 
-**401 / auth errors:** token expired or wrong; run `kantata login` again or refresh the bearer token. If MCP sets `KANTATA_ACCESS_TOKEN` to a stale value, it overrides the file—remove or update it.
+**401 / auth errors:** token invalid or revoked, or wrong account; run **`kantata login`** or **`kantata import-credentials`** again, or update **`KANTATA_ACCESS_TOKEN`**. If MCP sets **`KANTATA_ACCESS_TOKEN`** to a stale value, it overrides the file—remove or update it.
 
 **Optional (macOS):** to avoid putting a token in JSON, you can wrap the server with [`scripts/run_kantata_mcp_keychain.sh`](scripts/run_kantata_mcp_keychain.sh) and store the token in Keychain; see comments in that script.
 
