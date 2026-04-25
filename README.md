@@ -38,17 +38,23 @@ Some organizations prefer not to distribute an OAuth client secret to every user
 
 If you do not want users to store OAuth client credentials locally, you can run a small broker service (for example Google Apps Script) that performs the OAuth callback + token exchange server-side.
 
-- Users run `kantata login --broker-url <WEB_APP_BASE_URL>` (or set `KANTATA_OAUTH_BROKER_URL`).
-- The broker returns a short-lived auth session, receives the Kantata callback, exchanges the code for a token, and the CLI polls for completion.
-- The CLI still writes the resulting token to the same local credentials file used by MCP.
+There are **two** supported ways to finish login on the user’s laptop:
 
-Sample script (endpoints + state/session flow): [`examples/google-apps-script/kantata_oauth_broker.gs`](examples/google-apps-script/kantata_oauth_broker.gs)
+1. **Machine broker (poll)** — `kantata login --broker-url <WEB_APP_BASE_URL>` (or `KANTATA_OAUTH_BROKER_URL`). The CLI calls broker `start` / `poll` over HTTPS and writes the Kantata access token to the credentials file. **Requires** the broker URL to return JSON to unauthenticated clients (see Google note below).
+2. **Browser handoff (paste token)** — `kantata login --broker-url <WEB_APP_BASE_URL> --broker-browser`. The user opens the broker **start** URL in a normal browser (Google Workspace login is fine), completes Kantata OAuth on the broker, copies the **access token** from the broker success page, and pastes it into the CLI prompt. **No** broker `start`/`poll` calls from the CLI, so this works when the web app is gated behind Google Sign-In.
+
+In both cases the CLI writes the same local credentials file MCP uses (unless `KANTATA_ACCESS_TOKEN` overrides it).
+
+Sample script (endpoints + HTML success page for handoff): [`examples/google-apps-script/kantata_oauth_broker.gs`](examples/google-apps-script/kantata_oauth_broker.gs)
 
 Recommended controls:
 - Keep `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET` in Script Properties (not source code).
 - Restrict edit/deploy rights and web app audience to approved users/domain.
 - Use short-lived sessions and one-time token retrieval.
 - Do not log raw access tokens.
+
+**Google Apps Script Web App access (`kantata login --broker-url` without `--broker-browser`):**  
+`start` and `poll` are plain **HTTPS GET** requests from the user’s machine (no Google cookies). If the deploy uses **Who has access: anyone in your Google Workspace only** (or similar), Google often responds with **HTTP 302** to a Sign-In page instead of your script’s JSON, so **polling login cannot complete**. Either redeploy with **Who has access: Anyone** for that pattern (with the risks described earlier), or have users use **`--broker-browser`** instead.
 
 ### Governance checklist
 
@@ -83,7 +89,7 @@ This section is for **you** if you want the CLI and/or MCP server on your comput
 1. **Pick how you get the tools** — Easiest: **Option A** (`uvx` from git, no clone). Or **Option B** (clone the repo and install into a venv). Both are spelled out below.
 2. **Get Kantata credentials from your admin** — Usually **OAuth client ID + client secret** (for `kantata login`), or sometimes a **bearer access token** only. If you are not sure what to ask for, read **section 1** above.
 3. **Add the MCP server to your client** — In Cursor (or similar), add a `kantata` entry with **`uvx`**, **`--from`**, **`git+https://github.com/kleinjoshuaa/kantata-mcp.git`**, and **`kantata-mcp`** (full example under **MCP server in Cursor** below). You can **omit the whole `env` block** if you will use the default token file after login.
-4. **Sign in once from a terminal** — **OAuth:** set **`KANTATA_CLIENT_ID`** and **`KANTATA_CLIENT_SECRET`**, then run **`kantata login`** (prefix with **`uvx --from …`** if you use Option A). **Bearer only:** set **`KANTATA_ACCESS_TOKEN`** and skip login. (See **Sign in with OAuth** / **Sign in with a bearer token** below.)
+4. **Sign in once from a terminal** — **OAuth:** set **`KANTATA_CLIENT_ID`** and **`KANTATA_CLIENT_SECRET`**, then run **`kantata login`**. **Broker:** use **`kantata login --broker-url … --broker-browser`** if your org uses a Google-gated Apps Script broker (see **Sign in with OAuth broker**). **Bearer only:** set **`KANTATA_ACCESS_TOKEN`** and skip login. Prefix with **`uvx --from …`** if you use Option A.
 5. **Restart or refresh MCP in the IDE** — So the server reloads your saved token or updated `env`. If auth fails, check that MCP `env` does not set a stale **`KANTATA_ACCESS_TOKEN`** that overrides your credentials file.
 
 ### Prerequisites
@@ -165,7 +171,25 @@ You then run **`kantata`** and **`kantata-mcp`** from that environment.
 
 ### Sign in with OAuth broker (no local client secret)
 
-If your admin provides a broker URL (for example a Google Apps Script Web App), you can authenticate without setting local `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET`:
+If your admin provides a broker URL (for example a Google Apps Script Web App), you can authenticate without setting local `KANTATA_CLIENT_ID` / `KANTATA_CLIENT_SECRET`.
+
+Use the **web app URL only** (path ending in `/exec`), not a URL you copied mid-flow with `?action=start`—though the CLI normalizes that case.
+
+#### A) Browser handoff (recommended if Google gates the web app)
+
+Use this when **`kantata login --broker-url …` fails with HTTP 302** (Sign-In) because the CLI cannot call broker `start`/`poll` without a browser session.
+
+```bash
+kantata login --broker-url "https://script.google.com/macros/s/REPLACE_ME/exec" --broker-browser
+```
+
+The CLI prints (and may open) the broker **start** URL. If you see JSON there, that is normal: use the **`authorize_url`** value from it (or open it from the printed JSON) to continue to Kantata. After you approve access, the broker should show an **HTML** success page with the token—not more JSON.
+
+If Kantata sends you back to the web app but the page shows **`{"error":"unknown_action",...}`** instead of the success page, the OAuth redirect often dropped the `action=callback` query parameter. Redeploy the sample broker from this repo (it treats `?code=…` / OAuth `error=…` as a callback even when `action` is missing), or register a redirect URI that preserves the full callback query string Kantata was given at authorize time.
+
+Optional: `--token-type` if the broker shows a non-default OAuth token type (default `bearer`).
+
+#### B) Machine poll (broker returns JSON without browser cookies)
 
 ```bash
 kantata login --broker-url "https://script.google.com/macros/s/REPLACE_ME/exec"
@@ -178,12 +202,16 @@ export KANTATA_OAUTH_BROKER_URL="https://script.google.com/macros/s/REPLACE_ME/e
 kantata login
 ```
 
-The login command opens the broker-provided authorize URL, polls broker session status, then writes the token to your credentials file (same behavior as normal `kantata login` after exchange).
+The CLI calls broker `start`, opens Kantata’s authorize URL, polls `poll`, then writes the token to your credentials file.
 
-Broker contract used by CLI:
-- `GET <broker>/start` returns JSON with at least `session_id` and `authorize_url` (optionally `poll_url`, `poll_token`).
-- `GET <poll_url or <broker>/poll>?session_id=...&poll_token=...` returns `status` in `pending | complete | error | expired`.
-- `complete` payload includes `access_token` and optional `token_type`.
+Broker contract used by CLI for **machine poll** (either shape; see **`KANTATA_OAUTH_BROKER_STYLE`**):
+
+- **Path style:** `GET <broker>/start` then poll `GET <poll_url or <broker>/poll>?session_id=…&poll_token=…`.
+- **Query style (e.g. Google Apps Script):** `GET <broker>?action=start`, then poll with `GET <poll_url>` if the broker returns one, otherwise `GET <broker>?action=poll` with `session_id` and optional `poll_token` as query parameters (same `/exec` URL; there is no `/exec/start` path).
+
+Start JSON must include `session_id` and `authorize_url` (optionally `poll_url`, `poll_token`). Poll JSON returns `status` in `pending | complete | error | expired`; `complete` includes `access_token` and optional `token_type`.
+
+In **`auto`** mode (default), the CLI tries query-style first when the broker URL looks like Apps Script (`script.google.com` or `/macros/` in the path), otherwise path-style first—then the other style if the first does not return valid start JSON.
 
 ### Sign in with a bearer token only
 
@@ -224,8 +252,8 @@ It lets tools such as **Cursor** or **Claude Code** call Kantata in a structured
 **What you need (each user)**  
 
 - **This package** installed or invoked (for example via **`uvx`**, as in the sections below).  
-- **Kantata API access for that user:** either run **`kantata login`** once with an OAuth **client ID** and **client secret** from your admin (token is then stored in a local credentials file), *or* set **`KANTATA_ACCESS_TOKEN`** to a Kantata **OAuth access token** (Bearer) your org allows—same auth model as the API docs, not a separate Kantata product.  
-- **Your IDE configured** to start **`kantata-mcp`** (and, if you use login, restart MCP after login so it picks up the token file).  
+- **Kantata API access for that user:** run **`kantata login`** (local OAuth with client id/secret), **`kantata login --broker-url …`** / **`--broker-browser`** (broker-hosted OAuth), or set **`KANTATA_ACCESS_TOKEN`** to a Kantata **OAuth access token** (Bearer) your org allows—same auth model as the API docs, not a separate Kantata product.  
+- **Your IDE configured** to start **`kantata-mcp`**. After **`kantata login`** or **`kantata login --broker-browser`**, restart MCP so it reloads the credentials file (same as other login paths).  
 - **HTTPS reachability** to Kantata’s API host (default `https://api.mavenlink.com/api/v1`, unless **`KANTATA_API_BASE`** is set).
 
 ### MCP tools (`kantata-mcp`)
@@ -293,7 +321,7 @@ Add **`KANTATA_API_BASE`** in `env` only if your admin said so.
 
 **After `kantata login`:** restart the MCP server in the IDE so it reloads the token file.
 
-This is unchanged when using `--broker-url`: broker login still writes the local credentials file, and MCP reads it the same way.
+This is unchanged when using **`--broker-url`** (machine poll) or **`--broker-browser`**: both write the local credentials file, and MCP reads it the same way.
 
 **401 / auth errors:** token expired or wrong; run `kantata login` again or refresh the bearer token. If MCP sets `KANTATA_ACCESS_TOKEN` to a stale value, it overrides the file—remove or update it.
 
@@ -310,6 +338,7 @@ This is unchanged when using `--broker-url`: broker login still writes the local
 | `KANTATA_OAUTH_AUTHORIZE` / `KANTATA_OAUTH_TOKEN` | Override OAuth endpoints (rare) |
 | `KANTATA_OAUTH_CALLBACK_PORT` | Local callback port when not using `--port` on login (default **8765**) |
 | `KANTATA_OAUTH_BROKER_URL` | Optional broker base URL for `kantata login` when using server-side callback/token exchange |
+| `KANTATA_OAUTH_BROKER_STYLE` | `auto` (default), `path` (`/start` + `/poll` only), or `query` (`?action=start` + `?action=poll` only) |
 
 ### Development (optional)
 

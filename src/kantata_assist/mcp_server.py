@@ -11,7 +11,11 @@ from kantata_assist.operations import operations_from_token, parse_optional_csv
 
 mcp = FastMCP(
     "kantata_assist",
-    instructions="Tools for Kantata OX (Mavenlink): projects, tasks, time, time off, activity, users.",
+    instructions=(
+        "Tools for Kantata OX (Mavenlink): projects, tasks, time, time off, activity, users. "
+        "Auth uses the default credentials file from kantata login (including broker-browser paste flow) "
+        "or KANTATA_ACCESS_TOKEN if set. Restart MCP after changing credentials."
+    ),
 )
 
 

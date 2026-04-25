@@ -97,3 +97,36 @@ def test_login_uses_broker_env(monkeypatch: pytest.MonkeyPatch, runner: CliRunne
         poll_interval_seconds=2.0,
         timeout_seconds=300.0,
     )
+
+
+def test_login_broker_browser_requires_broker_url(runner: CliRunner) -> None:
+    result = runner.invoke(app, ["login", "--broker-browser"])
+    assert result.exit_code != 0
+    assert (
+        "broker-browser" in (result.stdout + result.stderr).lower()
+        or "broker" in (result.stdout + result.stderr).lower()
+    )
+
+
+def test_login_broker_browser_paste(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
+    opened: list[str] = []
+
+    def fake_open(url: str) -> None:
+        opened.append(url)
+
+    monkeypatch.setattr(
+        "kantata_assist.cli.broker_handoff_start_url", lambda u: "https://broker.example/exec?action=start"
+    )
+    monkeypatch.setattr("kantata_assist.cli.webbrowser.open", fake_open)
+    monkeypatch.setattr("kantata_assist.cli.typer.prompt", lambda *a, **k: "  pasted-token  ")
+    saved = MagicMock()
+    monkeypatch.setattr("kantata_assist.cli.save_pasted_access_token", saved)
+    monkeypatch.setattr("kantata_assist.cli.login_via_broker", MagicMock)
+
+    result = runner.invoke(
+        app,
+        ["login", "--broker-url", "https://broker.example/exec", "--broker-browser"],
+    )
+    assert result.exit_code == 0
+    assert opened == ["https://broker.example/exec?action=start"]
+    saved.assert_called_once_with(access_token="pasted-token", token_type="bearer")

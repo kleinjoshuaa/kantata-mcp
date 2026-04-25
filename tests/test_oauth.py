@@ -17,9 +17,11 @@ from kantata_assist.oauth import (
     _OAuthHandler,
     _require_env,
     _resolve_redirect_port,
+    broker_handoff_start_url,
     exchange_code_for_token,
     login_interactive,
     login_via_broker,
+    save_pasted_access_token,
 )
 
 
@@ -199,7 +201,7 @@ def test_login_via_broker_start_missing_fields() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     try:
-        with pytest.raises(RuntimeError, match="missing authorize_url"):
+        with pytest.raises(RuntimeError, match="Broker start failed"):
             login_via_broker(
                 broker_base_url="https://broker.example",
                 open_browser=False,
@@ -207,6 +209,137 @@ def test_login_via_broker_start_missing_fields() -> None:
             )
     finally:
         client.close()
+
+
+def test_login_via_broker_query_style_apps_script(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Apps Script uses ?action=start|poll on the /exec URL; /exec/start is not a valid path."""
+    monkeypatch.delenv("KANTATA_OAUTH_BROKER_STYLE", raising=False)
+    calls = {"poll": 0}
+    base = "https://script.google.com/macros/s/ABC123/exec"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        u = request.url
+        path = u.path
+        q = urllib.parse.parse_qs(u.query.decode())
+        if path.endswith("/exec/start"):
+            return httpx.Response(302, headers={"Location": "https://accounts.google.com/ServiceLogin"})
+        if path.endswith("/exec") and q.get("action") == ["start"]:
+            return httpx.Response(
+                200,
+                json={
+                    "session_id": "s-gas",
+                    "authorize_url": "https://app.mavenlink.com/oauth/authorize",
+                    "poll_url": base + "?action=poll",
+                    "poll_token": "pt-gas",
+                },
+            )
+        if path.endswith("/exec") and q.get("action") == ["poll"]:
+            calls["poll"] += 1
+            if calls["poll"] == 1:
+                return httpx.Response(200, json={"status": "pending"})
+            assert q["session_id"] == ["s-gas"]
+            assert q["poll_token"] == ["pt-gas"]
+            return httpx.Response(200, json={"status": "complete", "access_token": "tok-gas"})
+        raise AssertionError(str(u))
+
+    cpath = tmp_path / "creds.json"
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        out = login_via_broker(
+            broker_base_url=base,
+            open_browser=False,
+            poll_interval_seconds=0.01,
+            timeout_seconds=2,
+            credentials_path=cpath,
+            http_client=client,
+        )
+    finally:
+        client.close()
+    assert out == cpath
+    assert "tok-gas" in cpath.read_text(encoding="utf-8")
+
+
+def test_login_via_broker_query_style_pasted_exec_with_action_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pasting .../exec?action=start must not become .../exec?action=start/start."""
+    monkeypatch.delenv("KANTATA_OAUTH_BROKER_STYLE", raising=False)
+    calls = {"poll": 0}
+    base = "https://script.google.com/macros/s/ABC123/exec"
+    pasted = base + "?action=start"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        u = request.url
+        path = u.path
+        q = urllib.parse.parse_qs(u.query.decode())
+        assert "start/start" not in str(u)
+        if path.endswith("/exec/start"):
+            return httpx.Response(302, headers={"Location": "https://accounts.google.com/ServiceLogin"})
+        if path.endswith("/exec") and q.get("action") == ["start"]:
+            return httpx.Response(
+                200,
+                json={
+                    "session_id": "s-gas",
+                    "authorize_url": "https://app.mavenlink.com/oauth/authorize",
+                    "poll_url": base + "?action=poll",
+                    "poll_token": "pt-gas",
+                },
+            )
+        if path.endswith("/exec") and q.get("action") == ["poll"]:
+            calls["poll"] += 1
+            if calls["poll"] == 1:
+                return httpx.Response(200, json={"status": "pending"})
+            return httpx.Response(200, json={"status": "complete", "access_token": "tok-gas"})
+        raise AssertionError(str(u))
+
+    cpath = tmp_path / "creds.json"
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        out = login_via_broker(
+            broker_base_url=pasted,
+            open_browser=False,
+            poll_interval_seconds=0.01,
+            timeout_seconds=2,
+            credentials_path=cpath,
+            http_client=client,
+        )
+    finally:
+        client.close()
+    assert out == cpath
+    assert "tok-gas" in cpath.read_text(encoding="utf-8")
+
+
+def test_login_via_broker_style_path_forces_path_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KANTATA_OAUTH_BROKER_STYLE", "path")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        p = request.url.path
+        if p.endswith("/exec/start"):
+            return httpx.Response(
+                200,
+                json={
+                    "session_id": "s-path",
+                    "authorize_url": "https://broker.example/auth",
+                },
+            )
+        if p.endswith("/exec/poll"):
+            return httpx.Response(200, json={"status": "complete", "access_token": "only-path"})
+        return httpx.Response(404)
+
+    cpath = tmp_path / "creds.json"
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        login_via_broker(
+            broker_base_url="https://script.google.com/macros/s/X/exec",
+            open_browser=False,
+            poll_interval_seconds=0.01,
+            timeout_seconds=2,
+            credentials_path=cpath,
+            http_client=client,
+        )
+    finally:
+        client.close()
+    assert "only-path" in cpath.read_text(encoding="utf-8")
 
 
 def test_login_via_broker_error_status() -> None:
@@ -251,3 +384,22 @@ def test_login_via_broker_timeout() -> None:
             )
     finally:
         client.close()
+
+
+def test_broker_handoff_start_url_apps_script_query_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("KANTATA_OAUTH_BROKER_STYLE", raising=False)
+    u = broker_handoff_start_url("https://script.google.com/macros/s/ABC/exec")
+    assert "action=start" in u
+    assert u.startswith("https://script.google.com/")
+
+
+def test_save_pasted_access_token_writes_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    c = tmp_path / "creds.json"
+    monkeypatch.setenv("KANTATA_CREDENTIALS_PATH", str(c))
+    out = save_pasted_access_token(access_token="  tok9  ", token_type="Bearer")
+    assert out == c
+    data = c.read_text(encoding="utf-8")
+    assert "tok9" in data
+    assert "Bearer" in data

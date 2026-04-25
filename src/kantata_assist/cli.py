@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import json
 import sys
+import webbrowser
 from typing import Annotated, Any
 
 import typer
 
 from kantata_assist.client import KantataAPIError
 from kantata_assist.config import load_oauth_broker_url
-from kantata_assist.oauth import login_interactive, login_via_broker
+from kantata_assist.oauth import (
+    broker_handoff_start_url,
+    login_interactive,
+    login_via_broker,
+    save_pasted_access_token,
+)
 from kantata_assist.operations import operations_from_token, parse_optional_csv
 
 app = typer.Typer(
@@ -49,9 +55,43 @@ def login(
         float,
         typer.Option("--timeout-seconds", help="Total broker wait timeout in seconds"),
     ] = 300.0,
+    broker_browser: Annotated[
+        bool,
+        typer.Option(
+            "--broker-browser",
+            help=(
+                "With --broker-url: do not call broker start/poll from this machine. "
+                "Print the URL to open in your browser (Google login OK), then paste the "
+                "Kantata access token from the broker success page into the prompt."
+            ),
+        ),
+    ] = False,
+    token_type: Annotated[
+        str,
+        typer.Option("--token-type", help="Token type to store with --broker-browser (default bearer)"),
+    ] = "bearer",
 ) -> None:
     """OAuth2 login: opens browser, saves access token to credentials file."""
     b = broker_url.strip() if isinstance(broker_url, str) and broker_url.strip() else load_oauth_broker_url()
+    if broker_browser and not b:
+        raise typer.BadParameter("--broker-browser requires --broker-url or KANTATA_OAUTH_BROKER_URL")
+    if b and broker_browser:
+        start_url = broker_handoff_start_url(b)
+        typer.echo(
+            "Browser broker handoff: open the URL below in a browser where you can sign in "
+            "(e.g. Google Workspace). Complete Kantata authorization. On success, copy the "
+            "access token from the broker page, then paste it here.\n",
+            err=True,
+        )
+        typer.echo(start_url, err=True)
+        if not no_browser:
+            webbrowser.open(start_url)
+        token = typer.prompt("Paste Kantata access token", hide_input=True).strip()
+        if not token:
+            raise typer.BadParameter("Empty token")
+        tt = token_type.strip() or "bearer"
+        save_pasted_access_token(access_token=token, token_type=tt)
+        return
     if b:
         login_via_broker(
             broker_base_url=b,

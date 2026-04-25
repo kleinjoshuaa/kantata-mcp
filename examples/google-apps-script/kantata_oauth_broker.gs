@@ -3,7 +3,7 @@
  *
  * Endpoints (GET):
  *   ?action=start
- *   ?action=callback&code=...&state=...
+ *   ?action=callback&code=...&state=...   (also accepts ?code=...&state=... if the IdP drops action=callback)
  *   ?action=poll&session_id=...&poll_token=...
  *
  * Script Properties required:
@@ -17,13 +17,22 @@
  * - This sample keeps session state in Script Properties for simplicity.
  * - For higher scale/sensitivity, store sessions in a stronger backing store.
  * - Do not log raw tokens. Keep access to this Apps Script project tightly restricted.
+ * - Deploy > Test deployments > Select type: Web app. For CLI/MCP broker login, "Who has access"
+ *   must allow unauthenticated GETs to ?action=start and ?action=poll (usually "Anyone");
+ *   Workspace-only access often returns Google Sign-In (HTTP 302) instead of JSON.
+ * - Success page shows the Kantata access token for `kantata login ... --broker-browser` (paste flow).
  */
 
 function doGet(e) {
   var action = (e && e.parameter && e.parameter.action) || '';
+  // Poll first: never treat poll as OAuth callback (poll uses session_id, not code).
+  if (action === 'poll') return handlePoll_(e);
   if (action === 'start') return handleStart_();
   if (action === 'callback') return handleCallback_(e);
-  if (action === 'poll') return handlePoll_(e);
+  // Many OAuth servers append ?code=&state= to the registered redirect_uri and drop other
+  // query keys. If action=callback was stripped, we still have code/state — run callback.
+  if (getParam_(e, 'code')) return handleCallback_(e);
+  if (getParam_(e, 'error')) return handleCallback_(e);
   return json_({ error: 'unknown_action', message: 'Use action=start|callback|poll' }, 400);
 }
 
@@ -150,7 +159,11 @@ function handleCallback_(e) {
   sess.access_token = tokenJson.access_token;
   sess.token_type = tokenJson.token_type || 'bearer';
   putSession_(sessionId, sess);
-  return html_('Kantata login complete. You can close this tab and return to your terminal.');
+  return htmlHandoffSuccessPage_(
+    tokenJson.access_token,
+    sess.token_type,
+    ScriptApp.getService().getUrl()
+  );
 }
 
 function handlePoll_(e) {
@@ -265,6 +278,33 @@ function json_(payload, statusCode) {
   var out = ContentService.createTextOutput(JSON.stringify(payload));
   out.setMimeType(ContentService.MimeType.JSON);
   return out;
+}
+
+
+function htmlHandoffSuccessPage_(accessToken, tokenType, brokerExecUrl) {
+  var esc = escapeHtml_(accessToken);
+  var escType = escapeHtml_(String(tokenType || 'bearer'));
+  var escUrl = escapeHtml_(brokerExecUrl);
+  var cmd =
+    'kantata login --broker-url "' + brokerExecUrl + '" --broker-browser';
+  var html =
+    '<!doctype html><html><head><meta charset="utf-8"><title>Kantata login</title></head><body>' +
+    '<h1>Kantata access token</h1>' +
+    '<p>Copy the token below. In your terminal, run the command shown, then paste the token at the prompt.</p>' +
+    '<p><label for="t">Access token</label></p>' +
+    '<textarea id="t" readonly rows="8" cols="80" style="width:100%;font-family:monospace">' +
+    esc +
+    '</textarea>' +
+    '<p>Token type: <code>' +
+    escType +
+    '</code></p>' +
+    '<p><strong>Terminal command</strong> (broker URL is yours; adjust if needed):</p>' +
+    '<pre style="white-space:pre-wrap;word-break:break-all">' +
+    escapeHtml_(cmd) +
+    '</pre>' +
+    '<p>After the CLI writes credentials, you can close this tab.</p>' +
+    '</body></html>';
+  return HtmlService.createHtmlOutput(html);
 }
 
 function html_(message) {
