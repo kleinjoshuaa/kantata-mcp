@@ -34,7 +34,8 @@ function handleStart_() {
   var pollToken = randomId_();
   var state = randomId_();
   var expiresAtMs = now + cfg.ttlSeconds * 1000;
-  var callbackUrl = ScriptApp.getService().getUrl();
+  var baseUrl = ScriptApp.getService().getUrl();
+  var callbackUrl = addQueryParam_(baseUrl, 'action', 'callback');
 
   var authUrl =
     cfg.authorizeUrl +
@@ -55,22 +56,23 @@ function handleStart_() {
     callback_url: callbackUrl,
   };
   putSession_(sessionId, session);
+  putSessionStateIndex_(state, sessionId);
 
   return json_({
     session_id: sessionId,
     authorize_url: authUrl,
-    poll_url: callbackUrl + '?action=poll',
+    poll_url: addQueryParam_(baseUrl, 'action', 'poll'),
     poll_token: pollToken,
     expires_in_seconds: cfg.ttlSeconds,
   });
 }
 
 function handleCallback_(e) {
-  var sessionId = getParam_(e, 'session_id');
   var state = getParam_(e, 'state');
   var code = getParam_(e, 'code');
   var oauthError = getParam_(e, 'error');
   var oauthErrorDescription = getParam_(e, 'error_description');
+  var sessionId = getSessionIdByState_(state);
   var sess = getSession_(sessionId);
   if (!sess) return html_('Invalid or expired session.');
   if (isExpired_(sess)) {
@@ -107,7 +109,7 @@ function handleCallback_(e) {
         client_id: cfg.clientId,
         client_secret: cfg.clientSecret,
         code: code,
-        redirect_uri: ScriptApp.getService().getUrl(),
+        redirect_uri: addQueryParam_(ScriptApp.getService().getUrl(), 'action', 'callback'),
       },
       muteHttpExceptions: true,
       headers: { Accept: 'application/json' },
@@ -201,6 +203,20 @@ function putSession_(sessionId, obj) {
   PropertiesService.getScriptProperties().setProperty(sessionKey_(sessionId), JSON.stringify(obj));
 }
 
+function stateKey_(state) {
+  return 'oauth_state:' + state;
+}
+
+function putSessionStateIndex_(state, sessionId) {
+  if (!state || !sessionId) return;
+  PropertiesService.getScriptProperties().setProperty(stateKey_(state), sessionId);
+}
+
+function getSessionIdByState_(state) {
+  if (!state) return '';
+  return PropertiesService.getScriptProperties().getProperty(stateKey_(state)) || '';
+}
+
 function getSession_(sessionId) {
   if (!sessionId) return null;
   var raw = PropertiesService.getScriptProperties().getProperty(sessionKey_(sessionId));
@@ -213,6 +229,10 @@ function getSession_(sessionId) {
 }
 
 function deleteSession_(sessionId) {
+  var sess = getSession_(sessionId);
+  if (sess && sess.state) {
+    PropertiesService.getScriptProperties().deleteProperty(stateKey_(sess.state));
+  }
   PropertiesService.getScriptProperties().deleteProperty(sessionKey_(sessionId));
 }
 
@@ -234,6 +254,11 @@ function toQuery_(obj) {
     parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(obj[k])));
   });
   return parts.join('&');
+}
+
+function addQueryParam_(url, key, value) {
+  var sep = url.indexOf('?') >= 0 ? '&' : '?';
+  return url + sep + encodeURIComponent(key) + '=' + encodeURIComponent(String(value));
 }
 
 function json_(payload, statusCode) {

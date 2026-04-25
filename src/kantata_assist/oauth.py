@@ -109,9 +109,12 @@ def _resolve_credentials_path(credentials_path: Path | None = None) -> Path:
 
 
 def _write_credentials_file(*, access_token: str, token_type: str = "bearer", credentials_path: Path | None = None) -> Path:
+    token = access_token.strip()
+    if not token:
+        raise RuntimeError("Cannot write empty access token")
     path = _resolve_credentials_path(credentials_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    out = {"access_token": access_token, "token_type": token_type}
+    out = {"access_token": token, "token_type": token_type}
     path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
     try:
         path.chmod(0o600)
