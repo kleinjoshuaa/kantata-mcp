@@ -9,7 +9,8 @@ from typing import Annotated, Any
 import typer
 
 from kantata_assist.client import KantataAPIError
-from kantata_assist.oauth import login_interactive
+from kantata_assist.config import load_oauth_broker_url
+from kantata_assist.oauth import login_interactive, login_via_broker
 from kantata_assist.operations import operations_from_token, parse_optional_csv
 
 app = typer.Typer(
@@ -30,8 +31,35 @@ def login(
         typer.Option("--port", help="OAuth callback port (default 8765; must match Kantata redirect URI)"),
     ] = None,
     no_browser: Annotated[bool, typer.Option("--no-browser")] = False,
+    broker_url: Annotated[
+        str | None,
+        typer.Option(
+            "--broker-url",
+            help=(
+                "OAuth broker base URL (e.g. Google Apps Script Web App). "
+                "Uses KANTATA_OAUTH_BROKER_URL when omitted."
+            ),
+        ),
+    ] = None,
+    poll_seconds: Annotated[
+        float,
+        typer.Option("--poll-seconds", help="Broker poll interval in seconds"),
+    ] = 2.0,
+    timeout_seconds: Annotated[
+        float,
+        typer.Option("--timeout-seconds", help="Total broker wait timeout in seconds"),
+    ] = 300.0,
 ) -> None:
     """OAuth2 login: opens browser, saves access token to credentials file."""
+    b = broker_url.strip() if isinstance(broker_url, str) and broker_url.strip() else load_oauth_broker_url()
+    if b:
+        login_via_broker(
+            broker_base_url=b,
+            open_browser=not no_browser,
+            poll_interval_seconds=poll_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+        return
     login_interactive(redirect_port=port, open_browser=not no_browser)
 
 

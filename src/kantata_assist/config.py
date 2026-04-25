@@ -35,3 +35,8 @@ def load_access_token(*, credentials_path: Path | None = None) -> str:
 def load_api_base() -> str | None:
     b = os.environ.get("KANTATA_API_BASE")
     return b.strip() if b else None
+
+
+def load_oauth_broker_url() -> str | None:
+    b = os.environ.get("KANTATA_OAUTH_BROKER_URL")
+    return b.strip() if b else None

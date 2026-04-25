@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import HTTPServer
+from pathlib import Path
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ from kantata_assist.oauth import (
     _resolve_redirect_port,
     exchange_code_for_token,
     login_interactive,
+    login_via_broker,
 )
 
 
@@ -148,3 +150,104 @@ def test_login_interactive_missing_client_id(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.delenv("KANTATA_CLIENT_SECRET", raising=False)
     with pytest.raises(RuntimeError, match="KANTATA_CLIENT_ID"):
         login_interactive(open_browser=False)
+
+
+def test_login_via_broker_success(tmp_path: Path) -> None:
+    calls = {"poll": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/start":
+            return httpx.Response(
+                200,
+                json={
+                    "session_id": "s-1",
+                    "authorize_url": "https://broker.example/auth",
+                    "poll_url": "https://broker.example/poll",
+                    "poll_token": "pt",
+                },
+            )
+        if request.method == "GET" and request.url.path == "/poll":
+            calls["poll"] += 1
+            if calls["poll"] == 1:
+                return httpx.Response(200, json={"status": "pending"})
+            q = urllib.parse.parse_qs(request.url.query.decode())
+            assert q["session_id"] == ["s-1"]
+            assert q["poll_token"] == ["pt"]
+            return httpx.Response(200, json={"status": "complete", "access_token": "abc", "token_type": "bearer"})
+        raise AssertionError(request.url)
+
+    cpath = tmp_path / "creds.json"
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        out = login_via_broker(
+            broker_base_url="https://broker.example",
+            open_browser=False,
+            poll_interval_seconds=0.01,
+            timeout_seconds=2,
+            credentials_path=cpath,
+            http_client=client,
+        )
+    finally:
+        client.close()
+    assert out == cpath
+    assert "abc" in cpath.read_text(encoding="utf-8")
+
+
+def test_login_via_broker_start_missing_fields() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"session_id": "x"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError, match="missing authorize_url"):
+            login_via_broker(
+                broker_base_url="https://broker.example",
+                open_browser=False,
+                http_client=client,
+            )
+    finally:
+        client.close()
+
+
+def test_login_via_broker_error_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/start":
+            return httpx.Response(
+                200,
+                json={"session_id": "s-1", "authorize_url": "https://broker.example/auth"},
+            )
+        return httpx.Response(200, json={"status": "error", "error": "denied"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError, match="Broker OAuth error: denied"):
+            login_via_broker(
+                broker_base_url="https://broker.example",
+                open_browser=False,
+                http_client=client,
+            )
+    finally:
+        client.close()
+
+
+def test_login_via_broker_timeout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/start":
+            return httpx.Response(
+                200,
+                json={"session_id": "s-1", "authorize_url": "https://broker.example/auth"},
+            )
+        return httpx.Response(200, json={"status": "pending"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        with pytest.raises(RuntimeError, match="Timed out"):
+            login_via_broker(
+                broker_base_url="https://broker.example",
+                open_browser=False,
+                poll_interval_seconds=0.01,
+                timeout_seconds=0.01,
+                http_client=client,
+            )
+    finally:
+        client.close()

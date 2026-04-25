@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kantata_assist.config import default_credentials_path, load_access_token, load_api_base
+from kantata_assist.config import default_credentials_path, load_access_token, load_api_base, load_oauth_broker_url
 from kantata_assist.operations import KantataOperations, operations_from_token
 
 
@@ -57,6 +57,13 @@ def test_load_api_base(monkeypatch: pytest.MonkeyPatch) -> None:
     assert load_api_base() == "https://x.example/api/v1"
     monkeypatch.delenv("KANTATA_API_BASE", raising=False)
     assert load_api_base() is None
+
+
+def test_load_oauth_broker_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KANTATA_OAUTH_BROKER_URL", " https://broker.example/app ")
+    assert load_oauth_broker_url() == "https://broker.example/app"
+    monkeypatch.delenv("KANTATA_OAUTH_BROKER_URL", raising=False)
+    assert load_oauth_broker_url() is None
 
 
 def test_operations_from_token_reads_default_credentials_file(

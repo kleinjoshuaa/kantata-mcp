@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.parse
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -100,6 +101,115 @@ def _resolve_redirect_port(explicit: int | None) -> int:
     return DEFAULT_OAUTH_CALLBACK_PORT
 
 
+def _resolve_credentials_path(credentials_path: Path | None = None) -> Path:
+    path = credentials_path or Path(os.environ.get("KANTATA_CREDENTIALS_PATH") or "").expanduser()
+    if not path or str(path) == ".":
+        path = Path.home() / ".config" / "kantata" / "credentials.json"
+    return path
+
+
+def _write_credentials_file(*, access_token: str, token_type: str = "bearer", credentials_path: Path | None = None) -> Path:
+    path = _resolve_credentials_path(credentials_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out = {"access_token": access_token, "token_type": token_type}
+    path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    print(f"Wrote credentials to {path}")
+    return path
+
+
+def _broker_url(base: str, endpoint: str) -> str:
+    b = base.strip().rstrip("/")
+    ep = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+    return f"{b}{ep}"
+
+
+def login_via_broker(
+    *,
+    broker_base_url: str,
+    open_browser: bool = True,
+    poll_interval_seconds: float = 2.0,
+    timeout_seconds: float = 300.0,
+    credentials_path: Path | None = None,
+    http_client: httpx.Client | None = None,
+) -> Path:
+    """Brokered OAuth login via external callback service.
+
+    Contract:
+    - GET {broker_base_url}/start -> {"session_id": "...", "authorize_url": "...", ...optional "poll_url"/"poll_token"}
+    - GET {poll_url or broker_base_url + '/poll'}?session_id=...&poll_token=... -> {"status": "..."}
+      status values: pending | complete | error | expired
+      complete payload must include access_token, optional token_type
+    """
+    owns = http_client is None
+    client = http_client or httpx.Client(timeout=30.0)
+    try:
+        start_url = _broker_url(broker_base_url, "/start")
+        start = client.get(start_url, headers={"Accept": "application/json"})
+        start.raise_for_status()
+        start_data = start.json()
+        if not isinstance(start_data, dict):
+            raise RuntimeError(f"Unexpected broker /start payload: {start_data!r}")
+
+        session_id = str(start_data.get("session_id") or "").strip()
+        authorize_url = str(start_data.get("authorize_url") or "").strip()
+        if not session_id:
+            raise RuntimeError("Broker /start missing session_id")
+        if not authorize_url:
+            raise RuntimeError("Broker /start missing authorize_url")
+
+        poll_url = str(start_data.get("poll_url") or _broker_url(broker_base_url, "/poll")).strip()
+        poll_token = str(start_data.get("poll_token") or "").strip()
+
+        print(f"Broker login session: {session_id}")
+        print("Open this URL to authenticate (if browser does not open):\n", authorize_url, sep="")
+        if open_browser:
+            webbrowser.open(authorize_url)
+
+        deadline = time.monotonic() + max(1.0, timeout_seconds)
+        sleep_for = max(0.2, poll_interval_seconds)
+        while time.monotonic() < deadline:
+            params: dict[str, str] = {"session_id": session_id}
+            if poll_token:
+                params["poll_token"] = poll_token
+            poll = client.get(poll_url, params=params, headers={"Accept": "application/json"})
+            poll.raise_for_status()
+            payload = poll.json()
+            if not isinstance(payload, dict):
+                raise RuntimeError(f"Unexpected broker /poll payload: {payload!r}")
+            status = str(payload.get("status") or "").strip().lower()
+            if status == "pending":
+                time.sleep(sleep_for)
+                continue
+            if status == "expired":
+                raise RuntimeError("Broker OAuth session expired before completion")
+            if status == "error":
+                msg = str(payload.get("error") or payload.get("message") or "unknown broker error").strip()
+                raise RuntimeError(f"Broker OAuth error: {msg}")
+            if status == "complete":
+                access = payload.get("access_token")
+                if not isinstance(access, str) or not access.strip():
+                    raise RuntimeError(f"Broker /poll complete missing access_token: {payload!r}")
+                token_type = payload.get("token_type")
+                if isinstance(token_type, str) and token_type.strip():
+                    tt = token_type.strip()
+                else:
+                    tt = "bearer"
+                return _write_credentials_file(
+                    access_token=access.strip(),
+                    token_type=tt,
+                    credentials_path=credentials_path,
+                )
+            raise RuntimeError(f"Unknown broker /poll status {status!r} (payload: {payload!r})")
+        raise RuntimeError("Timed out waiting for broker OAuth completion")
+    finally:
+        if owns:
+            client.close()
+
+
 def login_interactive(
     *,
     redirect_port: int | None = None,
@@ -170,16 +280,6 @@ def login_interactive(
     access = token_payload.get("access_token")
     if not isinstance(access, str):
         raise RuntimeError(f"Unexpected token response: {token_payload!r}")
-
-    path = credentials_path or Path(os.environ.get("KANTATA_CREDENTIALS_PATH") or "").expanduser()
-    if not path or str(path) == ".":
-        path = Path.home() / ".config" / "kantata" / "credentials.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    out = {"access_token": access, "token_type": token_payload.get("token_type", "bearer")}
-    path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
-    print(f"Wrote credentials to {path}")
-    return path
+    token_type = token_payload.get("token_type")
+    tt = token_type.strip() if isinstance(token_type, str) and token_type.strip() else "bearer"
+    return _write_credentials_file(access_token=access, token_type=tt, credentials_path=credentials_path)

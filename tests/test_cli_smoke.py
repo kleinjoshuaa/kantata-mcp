@@ -45,3 +45,55 @@ def test_list_users_delegates(monkeypatch: pytest.MonkeyPatch, runner: CliRunner
         by_email_address=None,
         on_my_account=False,
     )
+
+
+def test_login_defaults_to_local_flow(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
+    called = {"local": 0}
+
+    def fake_local(*, redirect_port: int | None, open_browser: bool) -> None:
+        assert redirect_port is None
+        assert open_browser is True
+        called["local"] += 1
+
+    monkeypatch.setattr("kantata_assist.cli.login_interactive", fake_local)
+    monkeypatch.setattr("kantata_assist.cli.login_via_broker", MagicMock)
+    monkeypatch.setattr("kantata_assist.cli.load_oauth_broker_url", lambda: None)
+
+    result = runner.invoke(app, ["login"])
+    assert result.exit_code == 0
+    assert called["local"] == 1
+
+
+def test_login_uses_broker_flag(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
+    broker = MagicMock()
+    monkeypatch.setattr("kantata_assist.cli.login_via_broker", broker)
+    monkeypatch.setattr("kantata_assist.cli.login_interactive", MagicMock)
+    monkeypatch.setattr("kantata_assist.cli.load_oauth_broker_url", lambda: None)
+
+    result = runner.invoke(
+        app,
+        ["login", "--broker-url", "https://broker.example", "--poll-seconds", "1.5", "--timeout-seconds", "90"],
+    )
+    assert result.exit_code == 0
+    broker.assert_called_once_with(
+        broker_base_url="https://broker.example",
+        open_browser=True,
+        poll_interval_seconds=1.5,
+        timeout_seconds=90.0,
+    )
+
+
+def test_login_uses_broker_env(monkeypatch: pytest.MonkeyPatch, runner: CliRunner) -> None:
+    broker = MagicMock()
+    monkeypatch.setattr("kantata_assist.cli.login_via_broker", broker)
+    monkeypatch.setattr("kantata_assist.cli.login_interactive", MagicMock)
+    monkeypatch.setattr("kantata_assist.cli.load_oauth_broker_url", lambda: "https://broker.from.env")
+
+    result = runner.invoke(app, ["login", "--no-browser"])
+    assert result.exit_code == 0
+    broker.assert_called_once_with(
+        broker_base_url="https://broker.from.env",
+        open_browser=False,
+        poll_interval_seconds=2.0,
+        timeout_seconds=300.0,
+    )
