@@ -107,8 +107,9 @@ function doGet(e) {
       '<pre style="background:#f5f5f5;padding:12px;word-break:break-all">' +
       escapeHtml_(jsonStr) +
       '</pre>' +
-      '<p><code>pbpaste | kantata import-credentials</code> (macOS) or save to a file and use ' +
-      '<code>--file</code>.</p>'
+      '<p><code>pbpaste | kantata import-credentials</code> (macOS) or ' +
+      '<code>pbpaste | uvx --from git+https://github.com/kleinjoshuaa/kantata-mcp.git kantata import-credentials</code>, ' +
+      'or save to a file and use <code>--file</code>.</p>'
   );
 }
 
