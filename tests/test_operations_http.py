@@ -175,6 +175,25 @@ def test_update_task_put() -> None:
     ops.upsert_task(workspace_id="", title="New", story_id="5")
 
 
+def test_update_task_status_put() -> None:
+    def h(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PUT"
+        assert request.url.path.endswith("/stories/5.json")
+        body = json.loads(request.content.decode())
+        assert body == {"story": {"status": "Completed"}}
+        return httpx.Response(
+            200,
+            json={
+                "count": 1,
+                "results": [{"key": "stories", "id": "5"}],
+                "stories": {"5": {"id": "5", "status": "Completed"}},
+            },
+        )
+
+    ops = operations_with_transport(h)
+    ops.upsert_task(workspace_id="", title="", story_id="5", status="Completed")
+
+
 def test_delete_task() -> None:
     def h(request: httpx.Request) -> httpx.Response:
         assert request.method == "DELETE"

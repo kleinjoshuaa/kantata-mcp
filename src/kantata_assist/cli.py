@@ -212,12 +212,24 @@ def cmd_update_task(
             help="task | deliverable | milestone | issue (Kantata story types)",
         ),
     ] = None,
+    status: Annotated[
+        str | None,
+        typer.Option("--status", help="Task status name to apply, including custom statuses"),
+    ] = None,
 ) -> None:
-    """Update a story. At least one of --title / --description / --parent / --assign-me / --story-type."""
+    """Update a story. At least one of --title / --description / --parent / --assign-me / --story-type / --status."""
     ops = operations_from_token()
-    if title is None and description is None and parent is None and not assign_me and story_type is None:
+    status_has_value = status is not None and str(status).strip()
+    if (
+        title is None
+        and description is None
+        and parent is None
+        and not assign_me
+        and story_type is None
+        and not status_has_value
+    ):
         typer.echo(
-            "Provide --title, --description, --parent, --assign-me, and/or --story-type",
+            "Provide --title, --description, --parent, --assign-me, --story-type, and/or --status",
             err=True,
         )
         raise typer.Exit(1)
@@ -236,6 +248,7 @@ def cmd_update_task(
             parent_story_id=parent,
             assignee_user_ids=assignees,
             story_type=story_type,
+            status=status,
         )
     )
 

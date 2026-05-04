@@ -139,10 +139,12 @@ def kantata_update_task(
     parent_story_id: str | None = None,
     assign_me: bool = False,
     story_type: str | None = None,
+    status: str | None = None,
 ) -> str:
     """Update a task. Provide at least one field to change; title defaults to existing if omitted.
 
     story_type: task, deliverable, milestone, or issue (Kantata story_type values).
+    status: task status name to apply, including custom statuses.
     assign_me: if true, sets assignees to you only (replaces others). To add/remove without replacing,
     use kantata_adjust_task_assignees.
     """
@@ -160,6 +162,7 @@ def kantata_update_task(
             parent_story_id=parent_story_id,
             assignee_user_ids=assignees,
             story_type=story_type,
+            status=status,
         )
     )
 

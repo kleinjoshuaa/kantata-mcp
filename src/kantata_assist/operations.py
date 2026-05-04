@@ -262,6 +262,7 @@ class KantataOperations:
         parent_story_id: str | None = None,
         assignee_user_ids: list[str] | None = None,
         story_type: str | None = None,
+        status: str | None = None,
     ) -> dict[str, Any]:
         assignee_user_ids = assignee_user_ids or []
         assignments = [{"assignee_id": int(x)} for x in assignee_user_ids if str(x).strip()]
@@ -277,9 +278,11 @@ class KantataOperations:
                 patch["assignments"] = assignments
             if story_type is not None:
                 patch["story_type"] = _coerce_story_type(story_type)
+            if status is not None and str(status).strip():
+                patch["status"] = status
             if not patch:
                 raise ValueError(
-                    "update requires at least one of title, description, parent_id, assignees, story_type"
+                    "update requires at least one of title, description, parent_id, assignees, story_type, status"
                 )
             body = {"story": patch}
             data = self._c.put(f"/stories/{story_id}", json_body=body)
