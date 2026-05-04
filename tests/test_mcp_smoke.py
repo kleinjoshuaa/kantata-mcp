@@ -50,6 +50,33 @@ def test_kantata_update_time_entry_tool(monkeypatch: pytest.MonkeyPatch) -> None
     )
 
 
+def test_kantata_update_task_status_tool(monkeypatch: pytest.MonkeyPatch) -> None:
+    ops = MagicMock()
+    ops.get_story.return_value = {"story": {"title": "Existing"}}
+    ops.upsert_task.return_value = {"items": [{"id": "5"}], "meta": {"count": 1}}
+    monkeypatch.setattr(mcp_server, "_ops", lambda: ops)
+    out = mcp_server.kantata_update_task(
+        story_id="5",
+        title=None,
+        description=None,
+        parent_story_id=None,
+        assign_me=False,
+        story_type=None,
+        status="Completed",
+    )
+    assert "5" in out
+    ops.upsert_task.assert_called_once_with(
+        workspace_id="",
+        title="Existing",
+        story_id="5",
+        description=None,
+        parent_story_id=None,
+        assignee_user_ids=None,
+        story_type=None,
+        status="Completed",
+    )
+
+
 def test_kantata_update_post_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     ops = MagicMock()
     ops.update_post.return_value = {"items": [{"id": "1"}], "meta": {"count": 1}}

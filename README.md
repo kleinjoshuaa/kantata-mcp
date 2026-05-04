@@ -237,7 +237,7 @@ The stdio MCP server exposes the tools below (names are stable for clients such 
 | `kantata_list_tasks` | List stories/tasks for a project; optional parent filter, search, and WBS labels. |
 | `kantata_get_story` | Fetch one task/story by id. |
 | `kantata_create_task` | Create a task (or milestone/issue); optional parent, description, assign self. |
-| `kantata_update_task` | Update title, description, parent, type, or replace assignees with yourself. |
+| `kantata_update_task` | Update title, description, parent, type, status, or replace assignees with yourself. |
 | `kantata_adjust_task_assignees` | Add or remove assignees without replacing everyone (or full replace). |
 | `kantata_delete_task` | Soft-delete a task/story. |
 | `kantata_log_time` | Create a project time entry (date, minutes, optional task and notes). |
